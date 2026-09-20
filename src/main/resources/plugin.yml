@@ -1,5 +1,5 @@
 name: CdrVephilimEconomy
-version: '0.1.0-beta.1'
+version: '0.1.0-beta.2-RC1'
 main: id.cdr.vephilimeconomy.CdrVephilimEconomy
 api-version: '1.21.11'
 authors: [MenkiPlugcore]
@@ -10,11 +10,48 @@ depend: [Citizens, Vault]
 commands:
   cve:
     description: Administrative command for CdrVephilimEconomy.
-    usage: /cve <reload|status|doctor|safety>
+    usage: /cve <reload|status|doctor|safety|shop>
     aliases: [veconomy]
-    permission: cdrvephilimeconomy.admin
 
 permissions:
   cdrvephilimeconomy.admin:
-    description: Administrative permission for CdrVephilimEconomy.
+    description: Full administrative permission for CdrVephilimEconomy.
     default: op
+    children:
+      cdrvephilimeconomy.shop.view: true
+      cdrvephilimeconomy.shop.create: true
+      cdrvephilimeconomy.shop.delete: true
+      cdrvephilimeconomy.shop.bind: true
+      cdrvephilimeconomy.shop.toggle: true
+      cdrvephilimeconomy.shop.item: true
+      cdrvephilimeconomy.shop.price: true
+      cdrvephilimeconomy.shop.stock: true
+      cdrvephilimeconomy.shop.manager: true
+
+  cdrvephilimeconomy.shop.view:
+    description: View shop list and details.
+    default: false
+  cdrvephilimeconomy.shop.create:
+    description: Create shops.
+    default: false
+  cdrvephilimeconomy.shop.delete:
+    description: Delete shops.
+    default: false
+  cdrvephilimeconomy.shop.bind:
+    description: Bind or unbind Citizens NPCs to shops.
+    default: false
+  cdrvephilimeconomy.shop.toggle:
+    description: Enable or disable shops.
+    default: false
+  cdrvephilimeconomy.shop.item:
+    description: Add, remove, and change listing modes.
+    default: false
+  cdrvephilimeconomy.shop.price:
+    description: Change listing buy and sell prices.
+    default: false
+  cdrvephilimeconomy.shop.stock:
+    description: Change listing stock configuration and runtime stock.
+    default: false
+  cdrvephilimeconomy.shop.manager:
+    description: Set shop responsibility metadata.
+    default: false
