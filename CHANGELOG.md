@@ -31,6 +31,7 @@ Format mengikuti prinsip Keep a Changelog dan versioning proyek akan menggunakan
 - `docs/BETA1_TEST_PLAN.md` untuk runtime QA/anti-dupe regression.
 - Configurable `transaction.max-amount` dengan hard safety clamp 1-2304.
 - Pesan khusus untuk transaksi yang tidak diizinkan.
+- NPC proximity guard melalui `npc.max-transaction-distance` agar GUI yang sudah terbuka tidak bisa dipakai untuk remote trading.
 
 ### Changed
 - `bulk-amount` sekarang otomatis dinormalisasi agar tidak melebihi `max-amount`.
@@ -38,7 +39,8 @@ Format mengikuti prinsip Keep a Changelog dan versioning proyek akan menggunakan
 - Definisi shop invalid sekarang ditolak secara fail-closed tanpa ikut masuk registry aktif.
 - Duplicate Citizens NPC binding ditolak sebelum shop dimasukkan ke registry.
 - Validasi startup diperketat untuk display name, NPC ID, inventory size, material, mode, harga finite/non-negatif, dan stock bounds.
-- Startup log sekarang menampilkan jumlah shop aktif, definition yang ditolak, dan transaction guard efektif.
+- Startup log sekarang menampilkan jumlah shop aktif, definition yang ditolak, transaction guard efektif, dan batas jarak NPC.
+- Setiap klik transaksi memverifikasi ulang NPC masih spawn, binding masih valid, world sama, dan player masih berada di jarak yang diizinkan.
 
 ### Security / Safety
 - Player tidak memiliki command shop.
@@ -46,6 +48,7 @@ Format mengikuti prinsip Keep a Changelog dan versioning proyek akan menggunakan
 - SELL beta.1 hanya menerima item vanilla polos yang `isSimilar` dengan template material sehingga custom meta/enchant tidak tersapu sebagai item biasa.
 - Batas jumlah transaksi tidak lagi hardcoded sebagai satu-satunya kontrol; nilai konfigurasi tetap dipagari hard limit internal.
 - Konfigurasi shop yang ambigu/duplikat tidak boleh menghasilkan binding NPC parsial.
+- Player tidak dapat membuka NPC shop lalu berjalan atau teleport jauh untuk tetap bertransaksi dari jarak jauh.
 
 ### Status
 - Build Maven berjalan melalui GitHub Actions untuk setiap update branch `dev/beta.1`.
