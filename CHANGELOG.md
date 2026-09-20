@@ -29,12 +29,24 @@ Format mengikuti prinsip Keep a Changelog dan versioning proyek akan menggunakan
 - Discord webhook audit async.
 - GitHub Actions build validation dan artifact JAR.
 - `docs/BETA1_TEST_PLAN.md` untuk runtime QA/anti-dupe regression.
+- Configurable `transaction.max-amount` dengan hard safety clamp 1-2304.
+- Pesan khusus untuk transaksi yang tidak diizinkan.
+
+### Changed
+- `bulk-amount` sekarang otomatis dinormalisasi agar tidak melebihi `max-amount`.
+- Shop/listing ID dinormalisasi ke lowercase dan hanya menerima `[a-z0-9_-]` maksimal 48 karakter.
+- Definisi shop invalid sekarang ditolak secara fail-closed tanpa ikut masuk registry aktif.
+- Duplicate Citizens NPC binding ditolak sebelum shop dimasukkan ke registry.
+- Validasi startup diperketat untuk display name, NPC ID, inventory size, material, mode, harga finite/non-negatif, dan stock bounds.
+- Startup log sekarang menampilkan jumlah shop aktif, definition yang ditolak, dan transaction guard efektif.
 
 ### Security / Safety
 - Player tidak memiliki command shop.
 - GUI menggunakan custom inventory holder dan memblokir click/drag mutation.
 - SELL beta.1 hanya menerima item vanilla polos yang `isSimilar` dengan template material sehingga custom meta/enchant tidak tersapu sebagai item biasa.
+- Batas jumlah transaksi tidak lagi hardcoded sebagai satu-satunya kontrol; nilai konfigurasi tetap dipagari hard limit internal.
+- Konfigurasi shop yang ambigu/duplikat tidak boleh menghasilkan binding NPC parsial.
 
 ### Status
-- Build Maven berhasil di GitHub Actions.
+- Build Maven berjalan melalui GitHub Actions untuk setiap update branch `dev/beta.1`.
 - Runtime QA di server Paper belum menjadi exit criteria yang selesai; beta.1 belum ditandai sebagai release final.
