@@ -63,18 +63,24 @@ Target: admin dapat mengelola shop tanpa edit source code atau bergantung pada e
 - [x] Edit harga BUY/SELL.
 - [x] Set/add/remove stock secara aman.
 - [x] Edit initial-stock dan max-stock.
-- [x] Persistence perubahan konfigurasi secara transactional dengan candidate validation + backup.
+- [x] Persistence perubahan konfigurasi transactional dengan candidate validation + backup.
 - [x] Safe runtime apply tanpa restart setelah perubahan admin.
-- [x] Permission admin yang granular.
+- [x] Permission admin granular.
 - [x] Identitas penanggung jawab shop (`manager`).
 - [x] Audit lokal perubahan konfigurasi ekonomi (`admin-audit.log`).
 - [x] Destructive confirmation untuk delete shop/listing.
 - [x] Safety guard: runtime stock mutation ditolak saat economy safety stop aktif.
-- [ ] Migration/versioning formal untuk schema `shops.yml` lintas beta.
-- [ ] Discord administrative audit sink.
+- [x] Formal `shops.yml` schema v2.
+- [x] Migration legacy beta.1/RC1 dengan `shops.yml.schema-v1.bak`.
+- [x] Future-schema fail-closed guard.
+- [x] Discord administrative audit sink async.
+- [x] Management diagnostics `/cve shop schema` + `/cve shop validate`.
+- [x] QoL display name / GUI size / listing slot.
 - [ ] Admin GUI opsional untuk operasi rutin tanpa command panjang.
+- [ ] Final beta.2 regression + migration recovery drill.
+- [ ] Finalisasi `0.1.0-beta.2`.
 
-**Status implementasi:** `0.1.0-beta.2-RC1` membuka branch `dev/beta.2` di atas frozen baseline beta.1. Fokus RC1 adalah command-driven management yang transactional dan audited; tidak mengubah core transaction engine beta.1.
+**Status implementasi:** `0.1.0-beta.2-RC2` pada branch `dev/beta.2`. RC1 management smoke test dinyatakan aman; RC2 fokus migration safety, administrative Discord audit, dan operasional QoL tanpa mengubah core transaction engine beta.1.
 
 ## beta.3 — Economy Staff & Governance
 
