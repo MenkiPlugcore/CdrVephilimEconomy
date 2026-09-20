@@ -1,0 +1,35 @@
+meta:
+  schema: 1
+
+# Master switch beta.4 RC1. Default OFF agar upgrade dari beta.3 tidak mengubah harga.
+enabled: false
+
+# Dynamic pricing RC1 memakai current stock ratio terhadap max-stock.
+# Harga dasar tetap berasal dari buy-price / sell-price di shops.yml.
+# Effective price = base price × bounded multiplier.
+#
+# pressure positif  = stock di bawah target -> harga naik
+# pressure negatif  = stock di atas target -> harga turun
+#
+# RC1 sengaja belum memakai cooldown / rolling market state.
+# Itu masuk hardening beta.4 berikutnya. Quote stale tetap dilindungi
+# oleh transaction-side expected-price guard sebelum mutation.
+shops:
+  blacksmith:
+    iron_ingot:
+      enabled: false
+      target-stock-ratio: 0.50
+      sensitivity: 0.50
+      min-multiplier: 0.75
+      max-multiplier: 1.50
+
+# Untuk mengaktifkan contoh:
+# 1. set enabled: true pada root file;
+# 2. set enabled: true pada listing yang diinginkan;
+# 3. jalankan /cve reload.
+#
+# Batas valid RC1:
+# - target-stock-ratio: 0.05 - 0.95
+# - sensitivity: 0 - 5
+# - min/max-multiplier: >0 sampai 10
+# - max-multiplier harus >= min-multiplier
