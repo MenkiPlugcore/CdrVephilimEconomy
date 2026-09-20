@@ -1,46 +1,65 @@
-# beta.3 RC3 Test Plan — CdrVephilimEconomy
+# beta.3 RC4 Test Plan — CdrVephilimEconomy
 
-Target build: `0.1.0-beta.3-RC3`.
+Target build: `0.1.0-beta.3-RC4`.
+
+RC4 adalah hardening candidate terakhir sebelum beta.3 FINAL. Fokus QA adalah memastikan role/scope RC1, approval RC2, rolling quota RC3, two-person approval RC4, dan core economy beta.1/beta.2 bekerja sebagai satu chain tanpa jalur bypass.
 
 ## Preconditions
 
 - Paper 1.21.11 / Java 21.
 - Citizens + Vault + economy provider aktif.
 - Baseline beta.2 shop/stock sehat.
-- Player test Staff, Manager, dan Treasurer sudah pernah join server.
+- Player test Staff, Manager, dan minimal satu Royal Treasurer sudah pernah join server.
+- Untuk full two-person test, sediakan minimal dua reviewer berbeda.
 - Minimal dua shop tersedia, misalnya `blacksmith` dan `farmer`.
 
-## Governance Storage
+## Startup / Health
 
-- [ ] `governance.yml` schema v1 tetap sehat.
-- [ ] `/cve governance status` menunjukkan governance healthy=true.
-- [ ] Governance YAML corrupt membuat role-based governance fail-closed.
-- [ ] Full admin tetap dapat recovery.
-- [ ] `/cve governance reload` memuat ulang governance + quota ledger.
+- [ ] Plugin enable tanpa exception.
+- [ ] `/cve status` menampilkan governance, approval, quota, dan dual approval.
+- [ ] `/cve governance status` menampilkan keempat layer tersebut.
+- [ ] `/cve doctor` tetap HEALTHY pada baseline normal.
+- [ ] `/cve governance who <staff>` menampilkan assignment + rolling quota usage.
+- [ ] `/cve shop schema` dan `/cve shop validate` tetap sehat.
 
 ## Role & Scope Regression
 
-- [ ] ECONOMY_STAFF `blacksmith` hanya dapat mutation capability Staff pada `blacksmith`.
-- [ ] Mutation `farmer` ditolak.
+- [ ] ECONOMY_STAFF scope `blacksmith` hanya dapat capability Staff pada `blacksmith`.
+- [ ] Staff `blacksmith` ditolak untuk mutation `farmer`.
 - [ ] ECONOMY_MANAGER mendapat capability Manager sesuai scope.
 - [ ] ROYAL_TREASURER scope `*` berlaku global.
 - [ ] Permission beta.2 eksplisit tetap menjadi operator override.
+- [ ] Grant/revoke tetap tercatat pada administrative audit.
 
-## Approval RC2 Regression
+## RC3 Runtime Wiring Regression — Wajib
 
-- [ ] Staff price change >20% membuat approval, tidak direct.
-- [ ] Manager price change >50% membuat approval.
-- [ ] Staff stock ADD/REMOVE >128 membuat approval.
-- [ ] Manager stock ADD/REMOVE >1024 membuat approval.
-- [ ] Staff/Manager stock SET membuat approval.
-- [ ] Anti-self-approval tetap aktif.
-- [ ] Reviewer hierarchy + scope tetap benar.
-- [ ] Approval expiry/cancel/reject tetap benar.
-- [ ] `EXECUTING` evidence dan manual recovery tetap fail-closed.
+RC4 memperbaiki wiring listener quota. Test ini memastikan proteksi RC3 benar-benar aktif, bukan hanya class/config tersedia.
 
-## RC3 Quota Storage
+Default Staff:
 
-Runtime evidence baru:
+```yaml
+window-minutes: 60
+max-price-percent-sum: 40.0
+max-stock-delta-sum: 256
+cooldown-seconds: 15
+```
+
+Untuk staging, cooldown boleh sementara diturunkan lalu restart/plugin reload sesuai kebutuhan config runtime.
+
+- [ ] Staff price `100 -> 120` direct sukses dan reserve sekitar 20 points.
+- [ ] Command direct lain sebelum cooldown selesai ditolak oleh governance cooldown.
+- [ ] Setelah cooldown, `120 -> 144` direct sukses; usage menjadi sekitar 40/40.
+- [ ] Direct price mutation ketiga yang masih <=20% per operasi ditolak rolling quota.
+- [ ] Naik lalu turun tetap dihitung absolute dan tidak mengurangi usage.
+- [ ] Staff stock `ADD 128`, lalu setelah cooldown `REMOVE 64`, lalu `ADD 64` menghasilkan cumulative 256.
+- [ ] Direct ADD/REMOVE berikutnya ditolak walaupun amount <=128.
+- [ ] Manager memakai policy quota/cooldown Manager.
+- [ ] `governance-usage.yml` dibuat dan survive restart.
+- [ ] `GOVERNANCE_QUOTA_RESERVED` muncul pada admin audit bila writer tersedia.
+
+## Quota Fail-Closed — STAGING
+
+Runtime evidence:
 
 ```text
 governance-usage.yml
@@ -48,102 +67,198 @@ governance-usage.yml.bak
 governance-usage.yml.tmp
 ```
 
-- [ ] Startup pertama membuat `governance-usage.yml` schema v1.
-- [ ] Mutation direct berikutnya membuat `.bak`.
-- [ ] `/cve governance status` menampilkan quota healthy=true.
-- [ ] `/cve governance who <player>` menampilkan window, used price, used stock, cooldown, dan last mutation.
-- [ ] Corrupt `governance-usage.yml` membuat direct role-only price/stock fail-closed.
-- [ ] BUY/SELL core tetap aktif bila quota ledger rusak.
-- [ ] Admin/Treasurer/operator permission tetap dapat recovery/operasi.
+- [ ] Corrupt quota ledger lalu restart: quota status menjadi unhealthy.
+- [ ] Direct role-only price/stock mutation diblokir, bukan berjalan tanpa quota.
+- [ ] BUY/SELL player tetap bekerja bila core economy sehat.
+- [ ] Royal Treasurer/full admin/explicit beta.2 permission tetap menyediakan recovery/operator path.
+- [ ] Setelah file diperbaiki dan governance reload/restart, health kembali normal.
 
-## ECONOMY_STAFF Price Rolling Quota
+Jangan melakukan corrupt-file drill pada production.
 
-Default:
+## RC2 Approval Regression — Non-Extreme
 
-```yaml
-window-minutes: 60
-max-price-percent-sum: 40.0
-cooldown-seconds: 15
-```
+Gunakan perubahan yang melewati role limit tetapi masih di bawah RC4 extreme threshold.
 
-Untuk testing cepat, cooldown boleh sementara diturunkan di staging lalu `/cve reload`.
+Contoh Staff harga `100 -> 150` = 50%.
 
-- [ ] Harga 100 -> 120 memakai sekitar 20 quota points.
-- [ ] Setelah cooldown, 120 -> 144 memakai sekitar 20 points lagi.
-- [ ] Usage menjadi sekitar 40/40.
-- [ ] Direct price change berikutnya yang masih <=20% per operasi diblokir rolling quota.
-- [ ] Perubahan >20% tetap masuk approval RC2 dan tidak dianggap direct quota reservation.
-- [ ] Perubahan harga no-op tidak mengonsumsi quota.
-- [ ] Price quota dihitung absolute; naik/turun tetap menambah usage, sehingga oscillation tidak mengurangi quota.
+- [ ] Mutation tidak berjalan langsung; approval ID dibuat.
+- [ ] Requester tidak dapat approve/reject sendiri.
+- [ ] Manager scope sama dapat approve Staff request non-extreme dengan satu review.
+- [ ] Setelah approve, harga berubah dan status APPROVED.
+- [ ] Reviewer tanpa scope ditolak.
+- [ ] Peer/lower role ditolak sesuai hierarchy.
+- [ ] Cancel/reject/expiry tidak mengeksekusi mutation.
+- [ ] Harga berubah lewat admin sebelum approval membuat request stale dan tidak overwrite state terbaru.
+- [ ] `EXECUTING` evidence + manual recovery RC2 tetap bekerja.
 
-## ECONOMY_MANAGER Price Rolling Quota
+## RC4 Two-Person Price Approval
 
 Default:
 
 ```yaml
-window-minutes: 60
-max-price-percent-sum: 100.0
-cooldown-seconds: 5
+governance:
+  approval:
+    two-person:
+      enabled: true
+      price-change-percent-threshold: 100.0
+      price-from-zero-requires-two: true
+      require-at-least-one-senior-reviewer: true
 ```
 
-- [ ] Beberapa direct change <=50% dapat berjalan sampai cumulative usage mendekati 100.
-- [ ] Direct mutation yang membuat cumulative usage >100 diblokir.
-- [ ] >50% per operasi tetap masuk approval tanpa direct quota reservation.
+Contoh Staff harga `100 -> 250` = 150%.
 
-## Runtime Stock Rolling Quota
+- [ ] Staff command menghasilkan approval PENDING; harga belum berubah.
+- [ ] Reviewer #1 yang valid menjalankan `/cve governance approval approve <id>`.
+- [ ] Review #1 hanya mencatat first-review evidence; harga tetap belum berubah.
+- [ ] `/cve governance approval show <id>` menunjukkan dual review WAITING_SECOND + reviewer pertama.
+- [ ] `governance-dual-approval.yml` berisi evidence approval tersebut.
+- [ ] Reviewer #1 mencoba approve lagi -> ditolak karena reviewer kedua harus berbeda.
+- [ ] Reviewer #2 berbeda tetapi valid menjalankan command yang sama.
+- [ ] Jika minimal satu reviewer senior terpenuhi, approval masuk executor RC2 lalu harga berubah.
+- [ ] Setelah terminal APPROVED, first-review evidence aktif dibersihkan.
+- [ ] `logs/governance-dual-approval-history.log` menyimpan bukti first review yang sudah selesai.
 
-Default Staff: 256 per 60 menit. Default Manager: 4096 per 60 menit.
+## Senior Reviewer Requirement
 
-- [ ] Staff ADD 128 direct sukses dan reserve 128.
-- [ ] Setelah cooldown, REMOVE 64 direct sukses dan cumulative usage 192.
-- [ ] Setelah cooldown, ADD 64 direct sukses dan cumulative usage 256.
-- [ ] Direct ADD/REMOVE berikutnya diblokir walaupun nilai per operasi <=128.
-- [ ] Staff ADD/REMOVE >128 tetap masuk approval RC2, bukan rolling direct quota.
-- [ ] Staff SET tetap masuk approval RC2.
-- [ ] Manager menggunakan limit rolling 4096 dengan pola yang sama.
+Senior reviewer default adalah:
+- Royal Treasurer dengan matching scope;
+- `cdrvephilimeconomy.governance.admin`;
+- `cdrvephilimeconomy.admin`.
 
-## Cooldown Anti-Burst
+`cdrvephilimeconomy.governance.approve` saja bukan senior.
 
-- [ ] Setelah satu direct mutation Staff, direct price/stock mutation berikutnya dalam <15 detik diblokir.
-- [ ] Setelah cooldown lewat, mutation dapat lanjut jika rolling quota masih tersedia.
-- [ ] Manager default cooldown 5 detik.
-- [ ] Cooldown berlaku lintas price dan stock, bukan hanya command yang sama.
-- [ ] Per-operation sensitive change yang diarahkan ke approval tidak membuat direct quota reservation.
+- [ ] Dua reviewer non-senior tidak dapat menyelesaikan extreme approval bila requirement aktif.
+- [ ] Reviewer pertama non-senior + reviewer kedua Treasurer scope sesuai dapat menyelesaikan.
+- [ ] Reviewer pertama Treasurer + reviewer kedua valid non-senior dapat menyelesaikan.
+- [ ] Dua admin berbeda dapat menyelesaikan bila keduanya bukan requester.
+- [ ] Requester tetap tidak dapat menjadi reviewer pertama ataupun kedua.
 
-## Permission / Role Bypass
+## Price From Zero
 
-- [ ] `cdrvephilimeconomy.admin` bypass rolling quota.
-- [ ] Royal Treasurer bypass rolling quota.
-- [ ] `cdrvephilimeconomy.shop.price` eksplisit bypass price quota.
-- [ ] `cdrvephilimeconomy.shop.stock` eksplisit bypass stock quota.
-- [ ] Bypass tetap tercakup administrative audit dari mutation shop normal.
+Dengan `price-from-zero-requires-two: true`:
 
-## Persistence / Restart
+- [ ] Staff/Manager request harga `0 -> nilai positif` menjadi approval.
+- [ ] Reviewer pertama tidak mengeksekusi mutation.
+- [ ] Reviewer kedua berbeda + senior policy terpenuhi baru dapat mengeksekusi.
 
-- [ ] Setelah direct mutation, restart server.
-- [ ] Rolling usage tetap terbaca dari `governance-usage.yml`.
-- [ ] Restart tidak mereset cooldown/window abuse protection secara diam-diam.
-- [ ] Event yang sudah keluar retention tidak memengaruhi quota baru.
+## RC4 Two-Person Stock Approval
 
-## Conservative Reservation
+Default:
 
-Reservation dibuat sebelum mutation shop dieksekusi.
+```yaml
+stock-delta-threshold: 4096
+stock-set-requires-two: true
+```
 
-- [ ] Reservation muncul di ledger sebelum mutation direct diproses.
-- [ ] Event `GOVERNANCE_QUOTA_RESERVED` muncul di `logs/admin-audit.log` bila writer tersedia.
-- [ ] Jika downstream mutation sengaja dibuat gagal di staging, quota reservation tetap ada sampai window expiry.
-- [ ] Kegagalan persistence quota membuat direct role mutation fail-closed, bukan dijalankan tanpa evidence.
+- [ ] Staff/Manager runtime `SET` menghasilkan approval dan selalu membutuhkan two-person review.
+- [ ] ADD/REMOVE amount >=4096 yang masuk approval membutuhkan two-person review.
+- [ ] ADD/REMOVE sensitive tetapi <4096 tetap single-review RC2.
+- [ ] Reviewer pertama tidak mengubah runtime stock.
+- [ ] Reviewer kedua valid baru mengeksekusi lewat `ShopAdminService`.
+- [ ] Bounds 0..max-stock tetap divalidasi saat execution.
 
-## Core Regression
+## Distinct Reviewer Identity
+
+- [ ] Player UUID yang sama tidak dapat menjadi reviewer #1 dan #2 walaupun nama/display berubah.
+- [ ] Console/operator identity tidak dapat dipakai dua kali sebagai dua reviewer berbeda.
+- [ ] Reviewer requester tetap ditolak sebelum first-review evidence dibuat.
+
+## Fingerprint / Evidence Integrity — STAGING ONLY
+
+First review menyimpan fingerprint SHA-256 immutable approval request fields.
+
+- [ ] Buat extreme approval dan record first review.
+- [ ] Restart server: first-review evidence tetap ada.
+- [ ] Approval kedua setelah restart masih membutuhkan reviewer berbeda.
+- [ ] Pada staging, ubah immutable approval request fields secara manual lalu reload/restart.
+- [ ] Fingerprint mismatch menghapus/menginvalidasi first review lama dan review harus dimulai ulang.
+- [ ] First-review lama tidak dapat dipakai untuk request target yang berubah.
+
+## Dual Approval Storage Fail-Closed — STAGING ONLY
+
+Runtime evidence:
+
+```text
+governance-dual-approval.yml
+governance-dual-approval.yml.bak
+governance-dual-approval.yml.tmp
+logs/governance-dual-approval-history.log
+```
+
+- [ ] Corrupt `governance-dual-approval.yml` lalu restart/reload.
+- [ ] Dual approval status menjadi unhealthy.
+- [ ] Extreme approval diblokir fail-closed.
+- [ ] BUY/SELL core tetap aktif bila core storage sehat.
+- [ ] Non-extreme RC2 approval tidak bergantung pada first-review storage dan tetap mengikuti normal approval policy.
+- [ ] Setelah storage diperbaiki + reload, extreme approval dapat direview lagi.
+
+## Approval Crash Recovery Regression — STAGING ONLY
+
+- [ ] `EXECUTING` approval pada startup tetap membuat approval subsystem `recoveryBlocked=true`.
+- [ ] Two-person layer tidak otomatis replay mutation.
+- [ ] Admin merekonsiliasi shop/stock/admin audit.
+- [ ] `/cve governance approval recover <id> executed CONFIRM` bekerja.
+- [ ] `/cve governance approval recover <id> not-executed CONFIRM` bekerja.
+- [ ] Terminal recovery membersihkan first-review evidence bila ada.
+
+## Config Toggle Regression
+
+- [ ] `two-person.enabled: false` mengembalikan approval ke RC2 single-review behavior.
+- [ ] Threshold price dapat diubah dan dipatuhi setelah config runtime diperbarui dengan prosedur reload yang didukung.
+- [ ] `stock-set-requires-two: false` membuat SET tetap approval RC2 tetapi tidak memerlukan reviewer kedua.
+- [ ] `require-at-least-one-senior-reviewer: false` tetap membutuhkan dua reviewer berbeda, tetapi tidak mensyaratkan senior.
+
+## Administrative Audit
+
+Pastikan event berikut muncul sesuai flow:
+
+```text
+GOVERNANCE_QUOTA_RESERVED
+GOV_DUAL_APPROVAL_FIRST_REVIEW_REQUEST
+GOV_DUAL_APPROVAL_FIRST_REVIEW_RECORDED
+GOV_DUAL_APPROVAL_SECOND_REVIEW_READY
+GOV_DUAL_APPROVAL_FIRST_REVIEW_CLEARED
+GOV_APPROVAL_APPROVE_REQUEST
+GOV_APPROVAL_EXECUTE_SUCCESS
+```
+
+- [ ] First-review audit REQUEST gagal -> first review tidak dicatat.
+- [ ] Second-review audit gagal -> mutation tidak dijalankan oleh dual gate.
+- [ ] Discord administrative audit aktif dapat menerima event governance secara async.
+
+## Core Economy Regression
 
 - [ ] BUY 1 sukses.
 - [ ] BUY bulk sukses.
 - [ ] SELL 1 sukses.
 - [ ] SELL bulk sukses.
+- [ ] Inventory full/stock 0/max-stock validation tetap benar.
 - [ ] Stock restart persistence tetap benar.
-- [ ] `/cve shop schema`, `/cve shop validate`, `/cve doctor`, `/cve safety status` tetap bekerja.
-- [ ] Pending transaction/admin mutation recovery beta.1/beta.2 tidak berubah.
+- [ ] NPC proximity guard tetap bekerja.
+- [ ] `/cve safety status` tetap normal.
+- [ ] Pending transaction journal/safety recovery beta.1 tidak berubah.
 
-## RC3 Exit Criteria
+## Shop Management Regression
 
-RC3 lulus bila rolling quota bertahan lintas restart, repeated small mutations tidak dapat melewati cumulative limit, cooldown mencegah command burst, sensitive per-operation changes tetap menggunakan approval RC2, permission/operator bypass tetap backward compatible, corrupt quota ledger fail-closed hanya pada direct role mutation, dan core BUY/SELL tidak regression.
+- [ ] `/cve shop list` dan `info` normal.
+- [ ] Edit satu price/listing oleh admin normal.
+- [ ] Bind/unbind NPC normal.
+- [ ] Enable/disable normal.
+- [ ] Runtime stock admin normal.
+- [ ] `shops.yml` admin mutation journal/recovery beta.2 tidak berubah.
+
+## RC4 Exit Criteria
+
+RC4 lulus jika:
+
+1. quota RC3 terbukti benar-benar aktif pada command runtime;
+2. repeated small mutation tidak dapat melewati rolling quota/cooldown;
+3. non-extreme approval tetap single-review sesuai RC2;
+4. extreme approval membutuhkan dua reviewer berbeda;
+5. default policy memerlukan minimal satu senior reviewer;
+6. first-review evidence persisten, fingerprint-bound, dan dibersihkan setelah terminal state;
+7. corrupt quota/dual storage fail-closed pada layer terkait tanpa mematikan core BUY/SELL;
+8. approval EXECUTING crash recovery tetap aman;
+9. tidak ada regression pada core transaksi atau beta.2 Shop Management.
+
+Jika kriteria ini aman pada runtime, next step adalah `0.1.0-beta.3 FINAL`. Tidak perlu RC5 kecuali ditemukan bug nyata.
