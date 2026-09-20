@@ -22,6 +22,7 @@ public final class TransactionService {
     private final StockRepository stocks;
     private final AuditService audit;
     private final Logger logger;
+    private final RuntimeSafetyState safetyState;
     private final long cooldownMillis;
     private final int maxAmount;
     private final boolean auditRejected;
@@ -30,12 +31,14 @@ public final class TransactionService {
     private final Map<UUID, Long> lastTransaction = new ConcurrentHashMap<>();
 
     public TransactionService(EconomyBridge economy, StockRepository stocks, AuditService audit, Logger logger,
+                              RuntimeSafetyState safetyState,
                               long cooldownMillis, int maxAmount,
                               boolean auditRejected, boolean auditBusyRejected) {
         this.economy = economy;
         this.stocks = stocks;
         this.audit = audit;
         this.logger = logger;
+        this.safetyState = safetyState;
         this.cooldownMillis = Math.max(0L, cooldownMillis);
         this.maxAmount = Math.max(1, Math.min(2304, maxAmount));
         this.auditRejected = auditRejected;
@@ -44,6 +47,11 @@ public final class TransactionService {
 
     public TransactionResult execute(Player player, Shop shop, ShopListing listing, TransactionType type, int amount) {
         UUID transactionId = UUID.randomUUID();
+
+        if (safetyState.isStopped()) {
+            return safetyStopped(transactionId, shop, listing, type, amount);
+        }
+
         if (amount <= 0 || amount > maxAmount) {
             return reject(transactionId, player, shop, listing, type, amount,
                     TransactionFailure.NOT_ALLOWED, "amount outside allowed range 1-" + maxAmount);
@@ -70,6 +78,9 @@ public final class TransactionService {
         }
 
         try {
+            if (safetyState.isStopped()) {
+                return safetyStopped(transactionId, shop, listing, type, amount);
+            }
             return type == TransactionType.BUY
                     ? buy(transactionId, player, shop, listing, amount)
                     : sell(transactionId, player, shop, listing, amount);
@@ -123,10 +134,13 @@ public final class TransactionService {
 
         if (!InventoryUtil.addPlain(player.getInventory(), listing.material(), amount)) {
             EconomyBridge.OperationResult refund = economy.deposit(player, total);
-            String detail = refund.success()
-                    ? "inventory mutation failed; money refunded"
-                    : "CRITICAL: inventory mutation failed and money refund failed: " + refund.errorMessage();
-            return internalFailure(tx, player, shop, listing, TransactionType.BUY, amount, stockBefore, detail);
+            if (!refund.success()) {
+                String detail = "CRITICAL: inventory mutation failed and money refund failed: " + refund.errorMessage();
+                tripSafety(tx, detail);
+                return internalFailure(tx, player, shop, listing, TransactionType.BUY, amount, stockBefore, detail);
+            }
+            return internalFailure(tx, player, shop, listing, TransactionType.BUY, amount, stockBefore,
+                    "inventory mutation failed; money refunded");
         }
 
         int stockAfter = stockBefore - amount;
@@ -134,10 +148,21 @@ public final class TransactionService {
             stocks.setStock(shop.id(), listing, stockAfter);
         } catch (IOException exception) {
             boolean itemRollback = InventoryUtil.removePlain(player.getInventory(), listing.material(), amount);
-            EconomyBridge.OperationResult refund = economy.deposit(player, total);
-            String detail = "stock persistence failed: " + exception.getMessage()
-                    + "; itemRollback=" + itemRollback
-                    + "; moneyRollback=" + refund.success();
+            boolean moneyRollback = false;
+            String rollbackDetail;
+
+            if (itemRollback) {
+                EconomyBridge.OperationResult refund = economy.deposit(player, total);
+                moneyRollback = refund.success();
+                rollbackDetail = moneyRollback
+                        ? "itemRollback=true; moneyRollback=true"
+                        : "itemRollback=true; moneyRollback=false; refundError=" + refund.errorMessage();
+            } else {
+                rollbackDetail = "itemRollback=false; moneyRollback=SKIPPED_TO_AVOID_FREE_ITEM";
+            }
+
+            String detail = "stock persistence failed: " + exception.getMessage() + "; " + rollbackDetail;
+            tripSafety(tx, detail);
             return internalFailure(tx, player, shop, listing, TransactionType.BUY, amount, stockBefore, detail);
         }
 
@@ -175,19 +200,32 @@ public final class TransactionService {
         EconomyBridge.OperationResult deposit = economy.deposit(player, total);
         if (!deposit.success()) {
             boolean restored = InventoryUtil.addPlain(player.getInventory(), listing.material(), amount);
-            return internalFailure(tx, player, shop, listing, TransactionType.SELL, amount, stockBefore,
-                    "deposit failed: " + deposit.errorMessage() + "; itemRollback=" + restored);
+            String detail = "deposit failed: " + deposit.errorMessage() + "; itemRollback=" + restored;
+            if (!restored) {
+                tripSafety(tx, detail);
+            }
+            return internalFailure(tx, player, shop, listing, TransactionType.SELL, amount, stockBefore, detail);
         }
 
         int stockAfter = stockBefore + amount;
         try {
             stocks.setStock(shop.id(), listing, stockAfter);
         } catch (IOException exception) {
-            EconomyBridge.OperationResult moneyRollback = economy.withdraw(player, total);
-            boolean itemRollback = InventoryUtil.addPlain(player.getInventory(), listing.material(), amount);
-            String detail = "stock persistence failed: " + exception.getMessage()
-                    + "; moneyRollback=" + moneyRollback.success()
-                    + "; itemRollback=" + itemRollback;
+            EconomyBridge.OperationResult moneyRollbackResult = economy.withdraw(player, total);
+            boolean moneyRollback = moneyRollbackResult.success();
+            boolean itemRollback = false;
+            String rollbackDetail;
+
+            if (moneyRollback) {
+                itemRollback = InventoryUtil.addPlain(player.getInventory(), listing.material(), amount);
+                rollbackDetail = "moneyRollback=true; itemRollback=" + itemRollback;
+            } else {
+                rollbackDetail = "moneyRollback=false; itemRollback=SKIPPED_TO_AVOID_MONEY_AND_ITEM_DUPLICATION"
+                        + "; withdrawError=" + moneyRollbackResult.errorMessage();
+            }
+
+            String detail = "stock persistence failed: " + exception.getMessage() + "; " + rollbackDetail;
+            tripSafety(tx, detail);
             return internalFailure(tx, player, shop, listing, TransactionType.SELL, amount, stockBefore, detail);
         }
 
@@ -195,6 +233,17 @@ public final class TransactionService {
                 listing.sellPrice(), total, stockBefore, stockAfter);
         record(player, shop, listing, TransactionType.SELL, result, "SUCCESS", "");
         return result;
+    }
+
+    private TransactionResult safetyStopped(UUID tx, Shop shop, ShopListing listing, TransactionType type, int amount) {
+        int stock = stocks.getStock(shop.id(), listing.id());
+        double unitPrice = type == TransactionType.BUY ? listing.buyPrice() : listing.sellPrice();
+        double total = safeTotal(unitPrice, amount);
+        if (!Double.isFinite(total) || amount <= 0 || total < 0) {
+            total = 0.0D;
+        }
+        return new TransactionResult(tx, false, TransactionFailure.SAFETY_STOP, amount,
+                unitPrice, total, stock, stock);
     }
 
     private TransactionResult reject(UUID tx, Player player, Shop shop, ShopListing listing, TransactionType type,
@@ -216,11 +265,23 @@ public final class TransactionService {
     private TransactionResult internalFailure(UUID tx, Player player, Shop shop, ShopListing listing, TransactionType type,
                                               int amount, int stockBefore, String detail) {
         logger.severe("Economy transaction " + tx + " failed: " + detail);
+        double unitPrice = type == TransactionType.BUY ? listing.buyPrice() : listing.sellPrice();
+        double total = safeTotal(unitPrice, amount);
+        if (!Double.isFinite(total) || total < 0) {
+            total = 0.0D;
+        }
         TransactionResult result = new TransactionResult(tx, false, TransactionFailure.INTERNAL_ERROR, amount,
-                type == TransactionType.BUY ? listing.buyPrice() : listing.sellPrice(),
-                0.0D, stockBefore, stockBefore);
+                unitPrice, total, stockBefore, stockBefore);
         record(player, shop, listing, type, result, "FAILED", detail);
         return result;
+    }
+
+    private void tripSafety(UUID tx, String detail) {
+        String reason = "tx=" + tx + "; " + detail;
+        if (safetyState.trip(reason)) {
+            logger.severe("ECONOMY SAFETY STOP ACTIVATED. Semua transaksi baru diblokir sampai server/plugin restart setelah investigasi. "
+                    + reason);
+        }
     }
 
     private void record(Player player, Shop shop, ShopListing listing, TransactionType type,
