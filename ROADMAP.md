@@ -102,14 +102,17 @@ Target: ekonomi dapat dikelola sebagai bagian dari RP kerajaan tanpa memberi ful
 - [x] Pre-execution `EXECUTING` evidence untuk crash-window approval.
 - [x] Manual recovery declaration untuk ambiguous EXECUTING state.
 - [x] Approval hierarchy: Manager dapat review Staff; Treasurer dapat review Manager/Staff.
-- [ ] Daily/rolling governance quota dan cooldown anti-spam perubahan berulang.
+- [x] Rolling governance quota untuk cumulative direct price/stock mutation.
+- [x] Persistent `governance-usage.yml` + backup/atomic write.
+- [x] Cooldown anti-command-burst per role.
+- [x] Quota health fail-closed untuk role-only direct mutation.
 - [ ] Two-person approval untuk perubahan sangat sensitif.
 - [ ] Final beta.3 regression dan security audit.
 - [ ] Finalisasi `0.1.0-beta.3`.
 
-**Status implementasi:** `0.1.0-beta.3-RC2` pada branch `dev/beta.3`. RC1 membangun role/scope foundation. RC2 menambahkan sensitive-change approval untuk perubahan harga di atas role limit dan runtime stock sensitif, dengan expiry, anti-self-approval, durable EXECUTING evidence, serta recovery fail-closed.
+**Status implementasi:** `0.1.0-beta.3-RC3` pada branch `dev/beta.3`. RC1 membangun role/scope foundation, RC2 menambahkan sensitive-change approval, dan RC3 menutup bypass perubahan kecil berulang melalui rolling quota + cooldown durable.
 
-Dokumentasi: [`docs/BETA3_RC1.md`](docs/BETA3_RC1.md), [`docs/BETA3_RC2.md`](docs/BETA3_RC2.md), dan [`docs/BETA3_TEST_PLAN.md`](docs/BETA3_TEST_PLAN.md).
+Dokumentasi: [`docs/BETA3_RC1.md`](docs/BETA3_RC1.md), [`docs/BETA3_RC2.md`](docs/BETA3_RC2.md), [`docs/BETA3_RC3.md`](docs/BETA3_RC3.md), dan [`docs/BETA3_TEST_PLAN.md`](docs/BETA3_TEST_PLAN.md).
 
 ## beta.4 — Controlled Dynamic Pricing
 
