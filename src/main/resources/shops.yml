@@ -1,0 +1,29 @@
+shops:
+  blacksmith:
+    display-name: "<gold>Blacksmith Kerajaan</gold>"
+    npc-id: -1
+    size: 27
+    enabled: false
+    listings:
+      iron_ingot:
+        material: IRON_INGOT
+        slot: 10
+        mode: BUY_SELL
+        buy-price: 50.0
+        sell-price: 30.0
+        initial-stock: 128
+        max-stock: 256
+      coal:
+        material: COAL
+        slot: 11
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 8.0
+        initial-stock: 0
+        max-stock: 1024
+
+# beta.1:
+# - npc-id harus diisi dengan ID Citizens NPC yang sudah dibuat.
+# - enabled harus true agar NPC membuka GUI.
+# - stock mutable disimpan terpisah di stock.yml pada folder plugin.
+# - identitas item beta.1 masih berbasis item vanilla/material polos.
