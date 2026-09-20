@@ -3,6 +3,8 @@ package id.cdr.vephilimeconomy.economy;
 import org.bukkit.OfflinePlayer;
 
 public interface EconomyBridge {
+    double balance(OfflinePlayer player);
+
     boolean has(OfflinePlayer player, double amount);
 
     OperationResult withdraw(OfflinePlayer player, double amount);
