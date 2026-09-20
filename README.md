@@ -4,13 +4,13 @@
 
 ## Status
 
-- **Current development:** `0.1.0-beta.4-RC1`
+- **Current development:** `0.1.0-beta.4-RC2`
 - **Frozen Governance baseline:** `0.1.0-beta.3`
 - **Frozen Shop Management baseline:** `0.1.0-beta.2`
 - **Frozen Core Economy baseline:** `0.1.0-beta.1`
 - Branch development aktif: `dev/beta.4`
 
-beta.4 RC1 membuka **Controlled Dynamic Pricing** dengan bounded stock-ratio quote engine. Dynamic pricing default **OFF**, sehingga upgrade dari beta.3 tidak otomatis mengubah harga server.
+beta.4 RC2 menambahkan durable sampled market state, quote cooldown, minimum stock delta sebelum resample, dan anti BUY/SELL churn di atas bounded dynamic-pricing RC1.
 
 ## Core Economy
 
@@ -25,30 +25,7 @@ beta.4 RC1 membuka **Controlled Dynamic Pricing** dengan bounded stock-ratio quo
 
 ## Shop Management beta.2
 
-```text
-/cve shop list
-/cve shop info <shop>
-/cve shop schema
-/cve shop validate
-/cve shop create <id> [size] [display name]
-/cve shop delete <id> CONFIRM
-/cve shop name <shop> <display name>
-/cve shop size <shop> <size>
-/cve shop bind <shop> <npc-id|-1>
-/cve shop enable <shop>
-/cve shop disable <shop>
-/cve shop manager <shop> <name|none>
-/cve shop additem <shop> <listing> <material|hand> <slot> <mode> <buy> <sell> <initial> <max>
-/cve shop removeitem <shop> <listing> CONFIRM
-/cve shop mode <shop> <listing> <BUY|SELL|BUY_SELL>
-/cve shop slot <shop> <listing> <slot>
-/cve shop price <shop> <listing> <buy|sell> <value>
-/cve shop initialstock <shop> <listing> <value>
-/cve shop maxstock <shop> <listing> <value>
-/cve shop stock <shop> <listing> <set|add|remove> <amount>
-```
-
-Shop management memakai `shops.yml` schema v2, candidate validation, backup, admin mutation journal, local administrative audit, dan optional Discord administrative audit.
+Shop Management menyediakan CRUD shop/listing, Citizens binding, enable/disable, price/stock management, schema migration, candidate validation, backup, admin mutation journal, granular permission, dan local/Discord administrative audit.
 
 ## Economy Staff & Governance beta.3
 
@@ -62,15 +39,22 @@ ROYAL_TREASURER
 
 Governance memiliki per-shop scope, sensitive-change approval, anti-self-approval, rolling quota/cooldown, dan two-person approval untuk extreme mutation. Frozen contract beta.3 didokumentasikan di [`docs/BETA3_FINAL.md`](docs/BETA3_FINAL.md).
 
-## beta.4 RC1 — Controlled Dynamic Pricing
+## beta.4 — Controlled Dynamic Pricing
 
-Base price tetap berasal dari `shops.yml`. File baru `pricing.yml` menentukan policy market per listing:
+Base price tetap berasal dari `shops.yml`. `pricing.yml` hanya mengatur multiplier market per listing.
+
+Contoh:
 
 ```yaml
 meta:
   schema: 1
 
 enabled: false
+
+stability:
+  quote-cooldown-seconds: 30
+  min-stock-change-to-resample: 8
+  reversal-cooldown-seconds: 15
 
 shops:
   blacksmith:
@@ -82,76 +66,68 @@ shops:
       max-multiplier: 1.50
 ```
 
-Master switch dan listing switch harus sama-sama `true` untuk mengaktifkan dynamic pricing.
+Dynamic pricing default **OFF**, sehingga upgrade tidak otomatis mengubah harga server.
 
-Model RC1:
+Model dasarnya:
 
 ```text
-stockRatio = currentStock / maxStock
+stockRatio = sampledStock / maxStock
 pressure   = normalized distance stockRatio dari target, -1..1
 multiplier = clamp(1 + sensitivity * pressure, minMultiplier, maxMultiplier)
 effective  = round2(basePrice * multiplier)
 ```
 
-Stock di bawah target menaikkan harga; stock di atas target menurunkan harga. Min/max multiplier menjadi price floor/ceiling relatif terhadap base price.
+Stock langka menaikkan harga; stock berlebih menurunkan harga. BUY dan SELL memakai multiplier yang sama sehingga spread base price tetap proporsional.
 
-Contoh base BUY `50`, SELL `30`, target `50%`, sensitivity `0.50`, min `0.75`, max `1.50`:
+### RC2 Market Sampling
+
+Harga tidak lagi bergerak setiap perubahan stock. Multiplier baru hanya dipersist bila:
+
+1. belum ada sample market;
+2. policy fingerprint berubah; atau
+3. quote cooldown sudah lewat **dan** stock bergerak minimal sebesar `min-stock-change-to-resample` dari sample terakhir.
+
+State disimpan di:
 
 ```text
-stock 0%   -> x1.50 -> BUY 75.00 / SELL 45.00
-stock 50%  -> x1.00 -> BUY 50.00 / SELL 30.00
-stock 100% -> x0.75 -> BUY 37.50 / SELL 22.50
+market-state.yml
+market-state.yml.bak
+market-state.yml.tmp
 ```
 
-BUY dan SELL memakai multiplier yang sama sehingga spread base tetap proporsional.
+Karena sample durable, restart tidak mereset quote cooldown atau multiplier market.
+
+### Policy Fingerprint
+
+Sample diikat ke target ratio, sensitivity, min/max multiplier, dan `max-stock`. Perubahan parameter tersebut membuat sample lama invalid dan memaksa resample aman pada quote berikutnya.
+
+### Anti BUY/SELL Churn
+
+Untuk listing dynamic, player yang baru BUY tidak dapat langsung SELL listing yang sama, dan sebaliknya, selama `reversal-cooldown-seconds`. Same-direction BUY→BUY atau SELL→SELL tidak diblokir sebagai demand/supply normal.
+
+### Dynamic Fail-Closed
+
+Jika `market-state.yml` corrupt atau tidak dapat dipersist, dynamic layer masuk `BLOCKED` dan quote kembali ke static base price. Core BUY/SELL tidak ikut dimatikan hanya karena state market bermasalah, dan corrupt evidence tidak ditimpa diam-diam.
 
 ### Stale Quote Safety
 
-GUI menyimpan quote yang benar-benar dilihat player. Transaction engine menghitung ulang quote di dalam listing lock. Bila harga telah berubah karena stock berubah, transaksi dikembalikan sebagai `PRICE_CHANGED` **sebelum uang, item, atau stock dimutasi**, lalu GUI direfresh.
+GUI menyimpan quote yang benar-benar dilihat player. Transaction engine menghitung ulang quote sebelum mutation. Bila sampled quote berubah sebelum klik, transaksi menjadi `PRICE_CHANGED` sebelum uang, item, atau stock berubah, lalu GUI direfresh.
 
-Transaction journal dan audit menyimpan effective unit price yang benar-benar dieksekusi, bukan static base price.
+Transaction journal dan audit tetap menyimpan effective unit price yang benar-benar dieksekusi.
 
-### Runtime Safety
-
-- `pricing.yml` invalid membatalkan startup/reload secara aman.
-- `/cve reload` dengan candidate pricing invalid mempertahankan runtime lama.
-- `/cve status` menampilkan status pricing.
-- `/cve shop info <shop>` menampilkan base -> effective price untuk listing dinamis.
-- Policy yang merujuk shop/listing tidak dikenal menghasilkan warning.
-- Dengan `pricing.yml.enabled=false`, behavior harga sama seperti beta.3.
-
-## Governance Persistence
+## Persistence Penting
 
 ```text
+stock.yml
+safety.lock
+pending-transactions/
+shops.yml
+market-state.yml
 governance.yml
 governance-approvals.yml
 governance-usage.yml
 governance-dual-approval.yml
-logs/governance-dual-approval-history.log
 ```
-
-Masing-masing durable governance file memiliki backup/temp persistence sesuai kontrak beta.3.
-
-## Permissions
-
-```text
-cdrvephilimeconomy.admin
-cdrvephilimeconomy.shop.view
-cdrvephilimeconomy.shop.create
-cdrvephilimeconomy.shop.delete
-cdrvephilimeconomy.shop.bind
-cdrvephilimeconomy.shop.toggle
-cdrvephilimeconomy.shop.edit
-cdrvephilimeconomy.shop.item
-cdrvephilimeconomy.shop.price
-cdrvephilimeconomy.shop.stock
-cdrvephilimeconomy.shop.manager
-cdrvephilimeconomy.governance.view
-cdrvephilimeconomy.governance.approve
-cdrvephilimeconomy.governance.admin
-```
-
-`cdrvephilimeconomy.admin` mewarisi seluruh permission plugin.
 
 ## Integrasi
 
@@ -168,12 +144,14 @@ cdrvephilimeconomy.governance.admin
 - [`docs/BETA2_FINAL.md`](docs/BETA2_FINAL.md)
 - [`docs/BETA3_FINAL.md`](docs/BETA3_FINAL.md)
 - [`docs/BETA4_RC1.md`](docs/BETA4_RC1.md)
+- [`docs/BETA4_RC2.md`](docs/BETA4_RC2.md)
 - [`docs/BETA4_TEST_PLAN.md`](docs/BETA4_TEST_PLAN.md)
+- [`docs/BETA4_RC2_TEST_PLAN.md`](docs/BETA4_RC2_TEST_PLAN.md)
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - [`docs/ECONOMY_DESIGN.md`](docs/ECONOMY_DESIGN.md)
 
 ## Next beta.4 Update
 
-Setelah RC1 QA aman, update berikutnya fokus ke **market quote cooldown/sampling + durable market state + anti-churn**, supaya player tidak dapat sengaja menggerakkan harga terlalu agresif melalui transaksi bolak-balik.
+Sesudah RC2 QA, fokus berikutnya: **market statistics + volume history + governance untuk perubahan parameter pricing** sebelum final regression/hardening beta.4.
 
 Plugin dikembangkan oleh **MenkiPlugcore** untuk **Vephilim Roleplay**.
