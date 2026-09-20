@@ -40,61 +40,40 @@ public final class RuntimeSafetyState {
 
     public synchronized void load() {
         clearInternal();
-        cleanupTempBestEffort();
 
-        if (!lockFile.exists()) {
-            return;
+        if (lockFile.exists()) {
+            try {
+                applySnapshot(readSnapshot(lockFile));
+                cleanupTempBestEffort();
+                logger.severe("Persistent economy safety stop ditemukan. Transaksi tetap dikunci sampai recovery eksplisit dilakukan.");
+                return;
+            } catch (IOException primaryFailure) {
+                logger.severe("safety.lock tidak valid: " + primaryFailure.getMessage());
+                if (tempFile.exists()) {
+                    try {
+                        SafetySnapshot recovered = readSnapshot(tempFile);
+                        moveReplace(tempFile, lockFile);
+                        applySnapshot(recovered);
+                        logger.severe("safety.lock dipulihkan dari temporary safety snapshot. Economy tetap fail-closed.");
+                        return;
+                    } catch (IOException tempFailure) {
+                        primaryFailure.addSuppressed(tempFailure);
+                    }
+                }
+                activateCorruptLock("CORRUPT_OR_INVALID_SAFETY_LOCK: " + primaryFailure.getMessage());
+                return;
+            }
         }
 
-        try {
-            YamlConfiguration yaml = loadStrict(lockFile);
-            int schema = yaml.getInt("meta.schema", -1);
-            if (schema != SCHEMA_VERSION) {
-                throw new IOException("unsupported schema " + schema);
-            }
-            if (!yaml.getBoolean("active", false)) {
-                throw new IOException("lock file exists but active=true is missing");
-            }
-
-            String rawStoppedAt = yaml.getString("stopped-at", "");
-            String rawReason = yaml.getString("reason", "");
-            String rawTransactionId = yaml.getString("transaction-id", "");
-            if (rawStoppedAt.isBlank()) {
-                throw new IOException("stopped-at is missing");
-            }
-            if (rawReason.isBlank()) {
-                throw new IOException("reason is missing");
-            }
-
-            Instant parsedStoppedAt;
+        if (tempFile.exists()) {
             try {
-                parsedStoppedAt = Instant.parse(rawStoppedAt);
-            } catch (DateTimeParseException exception) {
-                throw new IOException("invalid stopped-at timestamp", exception);
+                SafetySnapshot recovered = readSnapshot(tempFile);
+                moveReplace(tempFile, lockFile);
+                applySnapshot(recovered);
+                logger.severe("Interrupted safety-lock write dipulihkan dari safety.lock.tmp. Economy tetap fail-closed.");
+            } catch (IOException exception) {
+                activateCorruptLock("CORRUPT_OR_INCOMPLETE_SAFETY_TEMP: " + exception.getMessage());
             }
-
-            UUID parsedTransactionId = null;
-            if (!rawTransactionId.isBlank()) {
-                try {
-                    parsedTransactionId = UUID.fromString(rawTransactionId);
-                } catch (IllegalArgumentException exception) {
-                    throw new IOException("invalid transaction-id", exception);
-                }
-            }
-
-            stopped = true;
-            reason = rawReason;
-            stoppedAt = parsedStoppedAt;
-            transactionId = parsedTransactionId;
-            persistenceHealthy = true;
-            logger.severe("Persistent economy safety stop ditemukan. Transaksi tetap dikunci sampai recovery eksplisit dilakukan.");
-        } catch (IOException exception) {
-            stopped = true;
-            reason = "CORRUPT_OR_INVALID_SAFETY_LOCK: " + exception.getMessage();
-            stoppedAt = Instant.now();
-            transactionId = null;
-            persistenceHealthy = true;
-            logger.severe("safety.lock ada tetapi tidak dapat dipercaya. Fail-closed diaktifkan: " + exception.getMessage());
         }
     }
 
@@ -115,7 +94,7 @@ public final class RuntimeSafetyState {
             persistenceHealthy = true;
         } catch (IOException exception) {
             persistenceHealthy = false;
-            logger.severe("GAGAL MENYIMPAN safety.lock. Safety stop aktif di memory, tetapi tidak dijamin bertahan restart: "
+            logger.severe("GAGAL MENYIMPAN safety.lock. Safety stop aktif di memory, tetapi persistence safety tidak sehat: "
                     + exception.getMessage());
         }
         return true;
@@ -132,7 +111,7 @@ public final class RuntimeSafetyState {
             Files.deleteIfExists(lockFile.toPath());
             Files.deleteIfExists(tempFile.toPath());
         } catch (IOException exception) {
-            return new UnlockResult(false, "Gagal menyimpan bukti recovery / menghapus safety.lock: "
+            return new UnlockResult(false, "Gagal menyimpan bukti recovery / menghapus safety lock: "
                     + exception.getMessage());
         }
 
@@ -184,15 +163,64 @@ public final class RuntimeSafetyState {
         yaml.set("reason", reason);
         yaml.save(tempFile);
 
-        YamlConfiguration verified = loadStrict(tempFile);
-        if (verified.getInt("meta.schema", -1) != SCHEMA_VERSION
-                || !verified.getBoolean("active", false)
-                || verified.getString("stopped-at", "").isBlank()
-                || verified.getString("reason", "").isBlank()) {
-            throw new IOException("temporary safety lock verification failed");
+        readSnapshot(tempFile);
+        moveReplace(tempFile, lockFile);
+    }
+
+    private SafetySnapshot readSnapshot(File source) throws IOException {
+        YamlConfiguration yaml = loadStrict(source);
+        int schema = yaml.getInt("meta.schema", -1);
+        if (schema != SCHEMA_VERSION) {
+            throw new IOException("unsupported schema " + schema + " in " + source.getName());
+        }
+        if (!yaml.getBoolean("active", false)) {
+            throw new IOException(source.getName() + " exists but active=true is missing");
         }
 
-        moveReplace(tempFile, lockFile);
+        String rawStoppedAt = yaml.getString("stopped-at", "");
+        String rawReason = yaml.getString("reason", "");
+        String rawTransactionId = yaml.getString("transaction-id", "");
+        if (rawStoppedAt.isBlank()) {
+            throw new IOException("stopped-at is missing in " + source.getName());
+        }
+        if (rawReason.isBlank()) {
+            throw new IOException("reason is missing in " + source.getName());
+        }
+
+        Instant parsedStoppedAt;
+        try {
+            parsedStoppedAt = Instant.parse(rawStoppedAt);
+        } catch (DateTimeParseException exception) {
+            throw new IOException("invalid stopped-at timestamp in " + source.getName(), exception);
+        }
+
+        UUID parsedTransactionId = null;
+        if (!rawTransactionId.isBlank()) {
+            try {
+                parsedTransactionId = UUID.fromString(rawTransactionId);
+            } catch (IllegalArgumentException exception) {
+                throw new IOException("invalid transaction-id in " + source.getName(), exception);
+            }
+        }
+
+        return new SafetySnapshot(parsedStoppedAt, parsedTransactionId, rawReason);
+    }
+
+    private void applySnapshot(SafetySnapshot snapshot) {
+        stopped = true;
+        stoppedAt = snapshot.stoppedAt();
+        transactionId = snapshot.transactionId();
+        reason = snapshot.reason();
+        persistenceHealthy = true;
+    }
+
+    private void activateCorruptLock(String detail) {
+        stopped = true;
+        reason = detail;
+        stoppedAt = Instant.now();
+        transactionId = null;
+        persistenceHealthy = true;
+        logger.severe("Safety persistence tidak dapat dipercaya. Fail-closed diaktifkan: " + detail);
     }
 
     private void archiveEvidence(String actor) throws IOException {
@@ -201,8 +229,9 @@ public final class RuntimeSafetyState {
             throw new IOException("Could not create safety history directory: " + parent);
         }
 
-        if (lockFile.exists()) {
-            Files.copy(lockFile.toPath(), lastEvidenceFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        File evidence = lockFile.exists() ? lockFile : (tempFile.exists() ? tempFile : null);
+        if (evidence != null) {
+            Files.copy(evidence.toPath(), lastEvidenceFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
         }
 
         String line = Instant.now()
@@ -260,6 +289,9 @@ public final class RuntimeSafetyState {
                 .replace("\t", "\\t")
                 .replace("\r", "\\r")
                 .replace("\n", "\\n");
+    }
+
+    private record SafetySnapshot(Instant stoppedAt, UUID transactionId, String reason) {
     }
 
     public record UnlockResult(boolean success, String message) {
