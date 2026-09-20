@@ -169,22 +169,22 @@ public final class DynamicPricingService {
     public ChurnDecision checkChurn(UUID playerId, Shop shop, ShopListing listing,
                                     TransactionType requestedType) {
         if (playerId == null || !isDynamic(shop.id(), listing.id()) || reversalCooldownMillis <= 0L) {
-            return ChurnDecision.allowed();
+            return ChurnDecision.allow();
         }
 
         long now = System.currentTimeMillis();
         DirectionStamp previous = recentDirections.get(directionKey(playerId, shop.id(), listing.id()));
         if (previous == null || previous.type() == requestedType) {
-            return ChurnDecision.allowed();
+            return ChurnDecision.allow();
         }
 
         long elapsed = Math.max(0L, now - previous.atMillis());
         if (elapsed >= reversalCooldownMillis) {
-            return ChurnDecision.allowed();
+            return ChurnDecision.allow();
         }
 
         long remaining = reversalCooldownMillis - elapsed;
-        return ChurnDecision.blocked(remaining,
+        return ChurnDecision.block(remaining,
                 "rapid opposite-direction market churn: previous=" + previous.type()
                         + "; requested=" + requestedType
                         + "; remainingMs=" + remaining);
@@ -419,11 +419,11 @@ public final class DynamicPricingService {
     }
 
     public record ChurnDecision(boolean allowed, long remainingMillis, String detail) {
-        private static ChurnDecision allowed() {
+        private static ChurnDecision allow() {
             return new ChurnDecision(true, 0L, "OK");
         }
 
-        private static ChurnDecision blocked(long remainingMillis, String detail) {
+        private static ChurnDecision block(long remainingMillis, String detail) {
             return new ChurnDecision(false, Math.max(0L, remainingMillis), detail);
         }
     }
