@@ -9,5 +9,6 @@ public enum TransactionFailure {
     INVENTORY_FULL,
     MAX_STOCK,
     BUSY,
+    SAFETY_STOP,
     INTERNAL_ERROR
 }
