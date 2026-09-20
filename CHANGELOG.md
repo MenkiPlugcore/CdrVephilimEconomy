@@ -11,6 +11,32 @@ Format mengikuti prinsip Keep a Changelog dan versioning proyek akan menggunakan
 - Roadmap development awal.
 - Konsep NPC-only economy untuk Vephilim Roleplay.
 
+## [0.1.0-beta.1-RC4]
+
+### Added
+- Runtime economy safety latch/circuit breaker yang memblokir semua transaksi baru jika terjadi kegagalan kompensasi kritis atau kegagalan persistence stock saat transaksi.
+- Status safety latch ikut tampil pada `/cve status` dan startup/reload diagnostics.
+- Pesan player khusus `messages.safety-stop` ketika ekonomi masuk mode fail-closed.
+
+### Changed
+- BUY rollback pada kegagalan persistence sekarang menghindari refund bila item hasil transaksi tidak berhasil ditarik kembali, supaya tidak menciptakan kombinasi item gratis + uang kembali.
+- SELL rollback pada kegagalan persistence sekarang hanya mengembalikan item jika payout berhasil ditarik kembali; jika payout rollback gagal, item tidak dikembalikan untuk menghindari money+item duplication.
+- Kegagalan persistence stock sekarang selalu mengaktifkan safety stop setelah compensation attempt, karena storage dianggap tidak sehat untuk transaksi lanjutan.
+- Kegagalan refund/restore kritis juga mengaktifkan safety stop.
+- Safety latch tidak di-reset oleh `/cve reload`; admin harus investigasi lalu restart plugin/server setelah kondisi storage/economy sehat.
+- Audit `FAILED` sekarang menyimpan intended transaction total, bukan selalu `0`, agar investigasi kegagalan lebih jelas.
+- GUI shop otomatis ditutup ketika transaksi ditolak karena safety stop.
+- Artifact/version candidate dinaikkan menjadi `0.1.0-beta.1-RC4`.
+
+### Security / Safety
+- Fail-closed circuit breaker mencegah kegagalan rollback berulang dipakai sebagai jalur dupe.
+- Jalur rollback BUY/SELL memprioritaskan mencegah duplikasi nilai meskipun dalam kegagalan ekstrem mungkin dibutuhkan rekonsiliasi manual oleh admin.
+- Hot reload tidak dapat digunakan untuk melewati safety stop yang sudah aktif.
+
+### Status
+- `0.1.0-beta.1-RC4` menggantikan RC3 sebagai kandidat runtime QA.
+- BUY/SELL satuan dan bulk tetap tercatat lolos pengujian awal user; fokus QA berikutnya adalah anti-dupe, persistence failure, dan safety-stop behavior.
+
 ## [0.1.0-beta.1-RC3]
 
 ### Fixed
