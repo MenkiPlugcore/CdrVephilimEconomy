@@ -17,10 +17,10 @@ Fokus utamanya adalah membuat perdagangan terasa sebagai bagian dari dunia rolep
 
 ## Status
 
-**Current development candidate: `0.1.0-beta.2-RC3`**  
+**Stable beta baseline: `0.1.0-beta.2`**  
 **Frozen core baseline: `0.1.0-beta.1`**
 
-RC1 membuka command-driven shop management. RC2 menambahkan formal `shops.yml` schema v2, Discord administrative audit, dan QoL management. RC3 menutup crash-window perubahan konfigurasi admin dan memperkeras recovery migration sebelum beta.2 final.
+`0.1.0-beta.2` menutup fase Shop Management. RC1 membuka command-driven management, RC2 menambahkan `shops.yml` schema v2, Discord administrative audit, dan QoL management, sedangkan RC3 menutup crash-window perubahan konfigurasi admin serta memperkeras recovery migration. Runtime smoke/regression RC1-RC3 telah dinyatakan aman sebelum finalisasi.
 
 ## beta.2 Shop Management
 
@@ -51,18 +51,18 @@ Setiap mutation config melewati candidate validation dan runtime apply tanpa res
 
 ## shops.yml Schema v2
 
-RC3 tetap memakai:
+Beta.2 memakai:
 
 ```yaml
 meta:
   schema: 2
 ```
 
-File beta.1/RC1 tanpa schema dianggap legacy v1 dan dimigrasikan otomatis ketika shop management diinisialisasi. Sebelum migration dibuat backup `shops.yml.schema-v1.bak`. Migration sekarang memiliki pending marker + SHA-256 verification; jika server mati ketika migration berlangsung, RC3 dapat membedakan migration yang sudah committed, perlu diulang, atau perlu dipulihkan dari backup. Schema yang lebih baru dari kemampuan plugin tetap ditolak fail-closed.
+File beta.1/RC1 tanpa schema dianggap legacy v1 dan dimigrasikan otomatis ketika shop management diinisialisasi. Sebelum migration dibuat backup `shops.yml.schema-v1.bak`. Migration memiliki pending marker + SHA-256 verification; jika server mati ketika migration berlangsung, plugin dapat membedakan migration yang sudah committed, perlu diulang, atau perlu dipulihkan dari backup. Schema yang lebih baru dari kemampuan plugin ditolak fail-closed.
 
 ## Administrative Mutation Recovery
 
-RC3 menambahkan durable journal untuk perubahan `shops.yml` dari command admin. Sebelum live config diganti, plugin menyimpan hash konfigurasi original dan candidate ke:
+Perubahan `shops.yml` dari command admin menggunakan durable journal. Sebelum live config diganti, plugin menyimpan hash konfigurasi original dan candidate ke:
 
 ```text
 shops.yml.admin.pending
@@ -77,7 +77,7 @@ logs/admin-recovery.log
 
 Jika live config tidak cocok dengan original maupun candidate, mutation shop masuk **fail-closed**. BUY/SELL core tidak otomatis diubah oleh recovery admin, tetapi command mutation/stock admin diblokir sampai state diklarifikasi.
 
-`/cve shop schema` dan `/cve shop validate` sekarang juga menampilkan status recovery schema/admin mutation.
+`/cve shop schema` dan `/cve shop validate` juga menampilkan status recovery schema/admin mutation.
 
 ## Discord Administrative Audit
 
@@ -150,14 +150,15 @@ Tidak ada command shop untuk player.
 - [`ROADMAP.md`](ROADMAP.md) — tahapan development.
 - [`CHANGELOG.md`](CHANGELOG.md) — riwayat perubahan.
 - [`docs/BETA1_FINAL.md`](docs/BETA1_FINAL.md) — frozen core baseline beta.1.
+- [`docs/BETA2_FINAL.md`](docs/BETA2_FINAL.md) — frozen Shop Management baseline beta.2.
 - [`docs/BETA2_ADMIN_COMMANDS.md`](docs/BETA2_ADMIN_COMMANDS.md) — command dan permission beta.2.
 - [`docs/BETA2_TEST_PLAN.md`](docs/BETA2_TEST_PLAN.md) — QA beta.2.
 - [`docs/BETA2_RC3.md`](docs/BETA2_RC3.md) — recovery hardening RC3.
 - [`docs/ECONOMY_DESIGN.md`](docs/ECONOMY_DESIGN.md) — konsep ekonomi.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — arsitektur core.
 
-## Next beta.2 hardening
+## Development Berikutnya
 
-RC3 adalah kandidat hardening terakhir sebelum `0.1.0-beta.2` final. Jika runtime regression, migration recovery, admin mutation recovery, dan BUY/SELL core tetap aman, tahap berikutnya adalah finalisasi beta.2.
+`0.1.0-beta.2` sekarang menjadi baseline stabil untuk Shop Management. Fitur baru berikutnya masuk ke **beta.3 — Economy Staff & Governance**; bug beta.2 diperbaiki sebagai patch tanpa mencampurkan fitur governance baru.
 
 Plugin ini dikembangkan oleh **MenkiPlugcore** untuk project **Vephilim Roleplay**.
