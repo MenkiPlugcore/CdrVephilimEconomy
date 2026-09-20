@@ -40,15 +40,20 @@ public final class InventoryUtil {
     }
 
     public static boolean addPlain(PlayerInventory inventory, Material material, int amount) {
+        if (amount <= 0) {
+            return true;
+        }
         if (!canFit(inventory, material, amount)) {
             return false;
         }
 
+        ItemStack[] before = cloneContents(inventory.getStorageContents());
         int remaining = amount;
         int max = material.getMaxStackSize();
         while (remaining > 0) {
             int give = Math.min(max, remaining);
             if (!inventory.addItem(new ItemStack(material, give)).isEmpty()) {
+                restoreStorage(inventory, before);
                 return false;
             }
             remaining -= give;
@@ -64,6 +69,7 @@ public final class InventoryUtil {
             return false;
         }
 
+        ItemStack[] before = cloneContents(inventory.getStorageContents());
         ItemStack template = new ItemStack(material);
         int remaining = amount;
         ItemStack[] contents = inventory.getStorageContents();
@@ -84,6 +90,23 @@ public final class InventoryUtil {
             }
             remaining -= take;
         }
-        return remaining == 0;
+
+        if (remaining != 0) {
+            restoreStorage(inventory, before);
+            return false;
+        }
+        return true;
+    }
+
+    private static ItemStack[] cloneContents(ItemStack[] contents) {
+        ItemStack[] copy = new ItemStack[contents.length];
+        for (int i = 0; i < contents.length; i++) {
+            copy[i] = contents[i] == null ? null : contents[i].clone();
+        }
+        return copy;
+    }
+
+    private static void restoreStorage(PlayerInventory inventory, ItemStack[] snapshot) {
+        inventory.setStorageContents(cloneContents(snapshot));
     }
 }
