@@ -2,7 +2,7 @@
 
 Dokumen ini dipakai sebelum `beta.1` dianggap siap dipasang sebagai build uji Vephilim Roleplay.
 
-Target build saat ini: `0.1.0-beta.1-RC4`.
+Target build saat ini: `0.1.0-beta.1-RC5`.
 
 ## Prasyarat
 
@@ -35,7 +35,7 @@ Target build saat ini: `0.1.0-beta.1-RC4`.
 - [ ] Definisi shop invalid membuat reload gagal dan runtime lama tetap aktif.
 - [ ] `config.yml` dengan syntax YAML invalid membuat reload gagal dan runtime lama tetap aktif.
 - [ ] `/cve status` tetap menunjukkan runtime lama setelah reload gagal.
-- [ ] Jika safety stop sudah aktif, `/cve reload` tidak mereset safety latch.
+- [ ] Jika safety stop sudah aktif, `/cve reload` tidak mereset safety lock.
 
 ## Mode Transaksi
 
@@ -54,7 +54,7 @@ Harga saja tidak mengaktifkan arah transaksi.
 
 ## Startup Diagnostics
 
-- [ ] Console menampilkan version RC4 saat plugin enable.
+- [ ] Console menampilkan version RC5 saat plugin enable.
 - [ ] Console menampilkan jumlah shop, shop enabled, NPC binding, listing, stock entry, rejected definition, config warning, dan safety state.
 - [ ] Jika tidak ada active NPC binding, plugin tetap enable tetapi memberi warning yang jelas.
 - [ ] Vault economy provider yang dipakai tercetak di console.
@@ -131,21 +131,28 @@ Harga saja tidak mengaktifkan arah transaksi.
 - [ ] Kegagalan persistence menghasilkan audit `FAILED` dan mencoba rollback.
 - [ ] Player quit menghapus cooldown state tanpa mempengaruhi stock/saldo.
 
-## Transaction Safety Stop / Circuit Breaker
+## Persistent Transaction Safety Stop / Recovery
 
 Bagian ini sengaja untuk failure injection/staging; jangan dilakukan di server production dengan data penting.
 
-- [ ] Kondisi normal menunjukkan `/cve status` dengan `safety=OK`.
-- [ ] Simulasikan kegagalan write `stock.yml` saat BUY/SELL; transaksi gagal dan safety latch menjadi `STOPPED`.
+- [ ] Kondisi normal menunjukkan `/cve safety status` dengan `safety=OK`.
+- [ ] Simulasikan kegagalan write `stock.yml` saat BUY/SELL; transaksi gagal dan safety stop menjadi `STOPPED`.
+- [ ] Safety stop membuat `plugins/CdrVephilimEconomy/safety.lock` dengan `meta.schema`, `active`, `stopped-at`, `transaction-id`, dan `reason`.
 - [ ] Setelah safety stop aktif, semua transaksi BUY/SELL berikutnya ditolak tanpa mutation saldo/item/stock.
-- [ ] GUI ditutup ketika player mencoba transaksi saat safety stop aktif.
-- [ ] Player menerima `messages.safety-stop`.
-- [ ] `/cve status` menampilkan timestamp stop dan ringkasan reason.
-- [ ] `/cve reload` tetap dapat reload config/shop tetapi safety latch tetap STOPPED.
+- [ ] NPC shop tidak dapat dibuka selama safety stop aktif dan player menerima `messages.safety-stop`.
+- [ ] GUI shop yang sedang terbuka ditutup ketika safety stop terpicu.
+- [ ] `/cve status` dan `/cve safety status` menampilkan timestamp stop, transaction ID, persistence state, dan ringkasan reason.
+- [ ] `/cve reload` tidak mereset safety stop.
+- [ ] Restart server/plugin dengan `safety.lock` masih ada tetap menghasilkan state `STOPPED`; restart bukan recovery mechanism.
+- [ ] `safety.lock` invalid/corrupt membuat plugin tetap fail-closed, bukan menganggap safety normal.
+- [ ] `/cve safety unlock` tanpa kata `CONFIRM` tidak membuka ekonomi.
+- [ ] `/cve safety unlock CONFIRM` menolak recovery bila stock snapshot tidak dapat di-flush.
+- [ ] Setelah admin memeriksa transaction ID, saldo, item, stock, dan audit log, `/cve safety unlock CONFIRM` membuka transaksi tanpa restart.
+- [ ] Unlock sukses menghapus active `safety.lock`, menyimpan raw evidence terakhir ke `safety.lock.last`, dan menambah record ke `safety-history.log`.
+- [ ] Restart setelah unlock tetap menunjukkan `safety=OK`.
 - [ ] Pada BUY persistence failure, jika item rollback gagal, refund tidak dilakukan otomatis sehingga tidak tercipta item gratis + uang kembali.
 - [ ] Pada SELL persistence failure, jika payout rollback gagal, item tidak dikembalikan otomatis sehingga tidak tercipta kombinasi payout + item kembali.
 - [ ] Failure transaction yang memicu safety stop tercatat sebagai `FAILED` dengan intended total dan detail compensation.
-- [ ] Setelah investigasi/fix storage dan restart server/plugin, safety kembali `OK` dan stock/saldo diverifikasi manual sebelum membuka ekonomi lagi.
 
 ## Stock Persistence / Recovery
 
@@ -187,7 +194,8 @@ Bagian ini sengaja untuk failure injection/staging; jangan dilakukan di server p
 - [ ] Enable kembali setelah shutdown bersih mempertahankan saldo dan stock terakhir.
 - [ ] Simulasikan `stock.yml` corrupt dengan backup valid: recovery berhasil dan startup log memberi warning recovery.
 - [ ] Simulasikan `stock.yml` dan backup corrupt: plugin fail-closed/disable dan tidak menghasilkan stock reset diam-diam.
+- [ ] Jika load stock gagal, shutdown tidak menulis snapshot kosong baru yang menimpa bukti stock corrupt.
 
 ## Exit Criteria beta.1
 
-`beta.1` baru dianggap lulus jika jalur BUY/SELL utama, safe runtime reload, NPC-only proximity guard, persistence/recovery stock, config validation, audit trail, clean shutdown, safety-stop behavior, dan skenario anti-dupe di atas lolos di server uji. Fitur governance, admin GUI, dynamic pricing, dan market event tetap di luar scope beta.1.
+`beta.1` baru dianggap lulus jika jalur BUY/SELL utama, safe runtime reload, NPC-only proximity guard, persistence/recovery stock, config validation, audit trail, clean shutdown, persistent safety-stop recovery, dan skenario anti-dupe di atas lolos di server uji. Fitur governance, admin GUI, dynamic pricing, dan market event tetap di luar scope beta.1.
