@@ -1,0 +1,21 @@
+transaction:
+  cooldown-ms: 250
+  bulk-amount: 16
+
+audit:
+  local-enabled: true
+  discord:
+    enabled: false
+    webhook-url: ""
+
+messages:
+  prefix: "<dark_gray>[<gold>Vephilim Economy</gold>]</dark_gray> "
+  buy-success: "<green>Membeli <yellow>{amount}x {item}</yellow> seharga <gold>{total}</gold>.</green>"
+  sell-success: "<green>Menjual <yellow>{amount}x {item}</yellow> seharga <gold>{total}</gold>.</green>"
+  insufficient-money: "<red>Uangmu tidak cukup.</red>"
+  insufficient-stock: "<red>Stok pedagang tidak mencukupi.</red>"
+  insufficient-items: "<red>Item yang bisa dijual tidak mencukupi.</red>"
+  inventory-full: "<red>Inventory tidak memiliki ruang yang cukup.</red>"
+  max-stock: "<red>Pedagang tidak dapat menerima stok sebanyak itu.</red>"
+  busy: "<yellow>Transaksi sedang diproses. Coba lagi sebentar.</yellow>"
+  internal-error: "<red>Transaksi gagal dan dibatalkan. Tidak ada item atau uang yang seharusnya hilang.</red>"
