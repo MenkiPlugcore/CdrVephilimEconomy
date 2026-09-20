@@ -1,6 +1,14 @@
 transaction:
+  # Cooldown antar transaksi per player untuk menahan double-click/spam.
   cooldown-ms: 250
+
+  # Jumlah item saat Shift+klik.
+  # Nilai ini otomatis dibatasi agar tidak melebihi max-amount.
   bulk-amount: 16
+
+  # Batas keras jumlah item dalam satu transaksi.
+  # Safety clamp internal: 1-2304.
+  max-amount: 64
 
 audit:
   local-enabled: true
@@ -18,4 +26,5 @@ messages:
   inventory-full: "<red>Inventory tidak memiliki ruang yang cukup.</red>"
   max-stock: "<red>Pedagang tidak dapat menerima stok sebanyak itu.</red>"
   busy: "<yellow>Transaksi sedang diproses. Coba lagi sebentar.</yellow>"
+  not-allowed: "<red>Transaksi tersebut tidak diizinkan oleh pedagang.</red>"
   internal-error: "<red>Transaksi gagal dan dibatalkan. Tidak ada item atau uang yang seharusnya hilang.</red>"
