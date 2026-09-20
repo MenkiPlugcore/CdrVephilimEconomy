@@ -60,6 +60,7 @@ public final class CdrVephilimEconomy extends JavaPlugin {
         int maxAmount = clamp(getConfig().getInt("transaction.max-amount", 64), 1, 2304);
         int bulkAmount = clamp(getConfig().getInt("transaction.bulk-amount", 16), 1, maxAmount);
         long cooldownMillis = Math.max(0L, getConfig().getLong("transaction.cooldown-ms", 250L));
+        double maxNpcDistance = clamp(getConfig().getDouble("npc.max-transaction-distance", 6.0D), 1.0D, 32.0D);
 
         TransactionService transactions = new TransactionService(
                 economy,
@@ -79,13 +80,15 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                         gui,
                         transactions,
                         economy,
-                        bulkAmount
+                        bulkAmount,
+                        maxNpcDistance
                 ),
                 this
         );
 
         getLogger().info("CdrVephilimEconomy beta.1 core enabled: NPC-only shop, static pricing, stock, guarded transactions, audit.");
-        getLogger().info("Transaction guard: cooldown=" + cooldownMillis + "ms, bulk=" + bulkAmount + ", max=" + maxAmount + ".");
+        getLogger().info("Transaction guard: cooldown=" + cooldownMillis + "ms, bulk=" + bulkAmount
+                + ", max=" + maxAmount + ", npcDistance=" + maxNpcDistance + ".");
     }
 
     @Override
@@ -119,6 +122,13 @@ public final class CdrVephilimEconomy extends JavaPlugin {
     }
 
     private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static double clamp(double value, double min, double max) {
+        if (!Double.isFinite(value)) {
+            return min;
+        }
         return Math.max(min, Math.min(max, value));
     }
 }
