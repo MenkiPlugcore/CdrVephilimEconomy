@@ -133,8 +133,8 @@ public final class ShopGuiListener implements Listener {
             case INVENTORY_FULL -> "messages.inventory-full";
             case MAX_STOCK -> "messages.max-stock";
             case BUSY -> "messages.busy";
-            case INTERNAL_ERROR -> "messages.internal-error";
-            case NOT_ALLOWED, NONE -> "messages.internal-error";
+            case NOT_ALLOWED -> "messages.not-allowed";
+            case INTERNAL_ERROR, NONE -> "messages.internal-error";
         };
     }
 
