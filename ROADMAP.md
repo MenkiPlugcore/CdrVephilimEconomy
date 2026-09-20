@@ -94,18 +94,22 @@ Target: ekonomi dapat dikelola sebagai bagian dari RP kerajaan tanpa memberi ful
 - [x] Guardrail perubahan harga per operasi untuk Staff/Manager.
 - [x] Guardrail runtime stock add/remove per operasi untuk Staff/Manager.
 - [x] Runtime stock SET dibatasi ke Royal Treasurer/admin/explicit beta.2 permission.
-- [ ] Approval queue untuk perubahan sensitif.
-- [ ] Anti-self-approval.
-- [ ] Threshold perubahan yang wajib approval.
-- [ ] Expiry/cancel approval request.
+- [x] Approval queue untuk perubahan sensitif.
+- [x] Anti-self-approval.
+- [x] Threshold perubahan yang wajib approval.
+- [x] Expiry/cancel approval request.
+- [x] Durable approval persistence + backup/atomic write.
+- [x] Pre-execution `EXECUTING` evidence untuk crash-window approval.
+- [x] Manual recovery declaration untuk ambiguous EXECUTING state.
+- [x] Approval hierarchy: Manager dapat review Staff; Treasurer dapat review Manager/Staff.
 - [ ] Daily/rolling governance quota dan cooldown anti-spam perubahan berulang.
-- [ ] Durable approval recovery evidence.
+- [ ] Two-person approval untuk perubahan sangat sensitif.
 - [ ] Final beta.3 regression dan security audit.
 - [ ] Finalisasi `0.1.0-beta.3`.
 
-**Status implementasi:** `0.1.0-beta.3-RC1` pada branch `dev/beta.3`. RC1 membuka role/scope foundation dan guardrail awal; approval workflow sengaja ditunda ke RC berikutnya agar enforcement role/scope dapat diuji secara terpisah.
+**Status implementasi:** `0.1.0-beta.3-RC2` pada branch `dev/beta.3`. RC1 membangun role/scope foundation. RC2 menambahkan sensitive-change approval untuk perubahan harga di atas role limit dan runtime stock sensitif, dengan expiry, anti-self-approval, durable EXECUTING evidence, serta recovery fail-closed.
 
-Dokumentasi RC1: [`docs/BETA3_RC1.md`](docs/BETA3_RC1.md) dan [`docs/BETA3_TEST_PLAN.md`](docs/BETA3_TEST_PLAN.md).
+Dokumentasi: [`docs/BETA3_RC1.md`](docs/BETA3_RC1.md), [`docs/BETA3_RC2.md`](docs/BETA3_RC2.md), dan [`docs/BETA3_TEST_PLAN.md`](docs/BETA3_TEST_PLAN.md).
 
 ## beta.4 — Controlled Dynamic Pricing
 
