@@ -11,6 +11,35 @@ Format mengikuti prinsip Keep a Changelog dan versioning proyek akan menggunakan
 - Roadmap development awal.
 - Konsep NPC-only economy untuk Vephilim Roleplay.
 
+## [0.1.0-beta.1-RC5]
+
+### Added
+- Persistent `safety.lock` untuk menyimpan economy safety stop lintas restart/plugin reload.
+- Safety lock menyimpan schema, timestamp stop, transaction ID, dan reason kegagalan kritis.
+- `/cve safety status` untuk melihat status recovery, transaction ID, timestamp, persistence state, dan reason.
+- `/cve safety unlock CONFIRM` sebagai recovery eksplisit setelah admin melakukan rekonsiliasi manual.
+- `safety-history.log` untuk mencatat siapa dan kapan safety stop dibuka.
+- `safety.lock.last` untuk mempertahankan bukti raw safety lock terakhir setelah recovery.
+
+### Changed
+- Restart server/plugin tidak lagi menghapus safety stop aktif.
+- `/cve reload` tetap tidak dapat melewati safety lock.
+- NPC shop tidak dapat dibuka selama safety stop aktif.
+- Safety trip menutup GUI shop aktif dan seluruh transaksi berikutnya tetap fail-closed.
+- Recovery memaksa stock snapshot berhasil di-flush sebelum safety lock boleh dibuka.
+- `safety.lock` invalid/corrupt dianggap sebagai kondisi fail-closed, bukan safety normal.
+- Startup stock repository baru dipasang ke field runtime hanya setelah load berhasil sehingga disable setelah load failure tidak dapat mem-flush snapshot kosong ke file stock corrupt.
+- Artifact/version candidate dinaikkan menjadi `0.1.0-beta.1-RC5`.
+
+### Security / Safety
+- Safety stop sekarang survive restart sehingga restart tidak dapat dipakai sebagai bypass circuit breaker.
+- Recovery membutuhkan konfirmasi literal `CONFIRM` dan meninggalkan recovery trail.
+- Jika penulisan `safety.lock` gagal, runtime tetap STOPPED dan status menunjukkan persistence safety tidak sehat.
+
+### Status
+- `0.1.0-beta.1-RC5` menggantikan RC4 sebagai kandidat runtime QA.
+- BUY/SELL satuan dan bulk tetap tercatat lolos pengujian awal user; fokus QA berikutnya adalah persistent safety recovery, anti-dupe, dan restart edge cases.
+
 ## [0.1.0-beta.1-RC4]
 
 ### Added
@@ -23,7 +52,7 @@ Format mengikuti prinsip Keep a Changelog dan versioning proyek akan menggunakan
 - SELL rollback pada kegagalan persistence sekarang hanya mengembalikan item jika payout berhasil ditarik kembali; jika payout rollback gagal, item tidak dikembalikan untuk menghindari money+item duplication.
 - Kegagalan persistence stock sekarang selalu mengaktifkan safety stop setelah compensation attempt, karena storage dianggap tidak sehat untuk transaksi lanjutan.
 - Kegagalan refund/restore kritis juga mengaktifkan safety stop.
-- Safety latch tidak di-reset oleh `/cve reload`; admin harus investigasi lalu restart plugin/server setelah kondisi storage/economy sehat.
+- Safety latch tidak di-reset oleh `/cve reload`; admin harus investigasi sebelum membuka ekonomi lagi.
 - Audit `FAILED` sekarang menyimpan intended transaction total, bukan selalu `0`, agar investigasi kegagalan lebih jelas.
 - GUI shop otomatis ditutup ketika transaksi ditolak karena safety stop.
 - Artifact/version candidate dinaikkan menjadi `0.1.0-beta.1-RC4`.
