@@ -14,6 +14,9 @@ import id.cdr.vephilimeconomy.transaction.PlayerTransactionStateListener;
 import id.cdr.vephilimeconomy.transaction.TransactionService;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.command.PluginCommand;
+import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.InvalidConfigurationException;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.HandlerList;
 import org.bukkit.plugin.RegisteredServiceProvider;
@@ -64,8 +67,18 @@ public final class CdrVephilimEconomy extends JavaPlugin {
             return;
         }
 
+        RuntimeSettings initialSettings;
         try {
-            installRuntime(initialRegistry, readSettings());
+            initialSettings = readSettingsStrictFromDisk();
+            reloadConfig();
+        } catch (IOException exception) {
+            getLogger().severe("Gagal memuat config.yml secara aman: " + exception.getMessage());
+            getServer().getPluginManager().disablePlugin(this);
+            return;
+        }
+
+        try {
+            installRuntime(initialRegistry, initialSettings);
         } catch (IOException exception) {
             getLogger().severe("Gagal menyiapkan runtime economy: " + exception.getMessage());
             getServer().getPluginManager().disablePlugin(this);
@@ -133,18 +146,23 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                     + candidate.rejectedDefinitionCount() + " definisi shop yang ditolak. Runtime lama tetap aktif.");
         }
 
-        reloadConfig();
-        RuntimeSettings settings = readSettings();
+        RuntimeSettings candidateSettings;
+        try {
+            candidateSettings = readSettingsStrictFromDisk();
+        } catch (IOException exception) {
+            return new ReloadResult(false, "config.yml tidak valid: " + exception.getMessage()
+                    + ". Runtime lama tetap aktif.");
+        }
 
         AuditService newAudit;
         try {
-            newAudit = createAuditService(settings);
+            newAudit = createAuditService(candidateSettings);
         } catch (IOException exception) {
             return new ReloadResult(false, "Audit service baru gagal dibuka: " + exception.getMessage());
         }
 
-        TransactionService newTransactions = createTransactionService(newAudit, settings);
-        ShopGuiService newGui = new ShopGuiService(stockRepository, economy, settings.bulkAmount());
+        TransactionService newTransactions = createTransactionService(newAudit, candidateSettings);
+        ShopGuiService newGui = new ShopGuiService(stockRepository, economy, candidateSettings.bulkAmount());
         CitizensNpcListener newCitizensListener = new CitizensNpcListener(candidate, newGui);
         ShopGuiListener newGuiListener = new ShopGuiListener(
                 this,
@@ -152,24 +170,31 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                 newGui,
                 newTransactions,
                 economy,
-                settings.bulkAmount(),
-                settings.maxNpcDistance()
+                candidateSettings.bulkAmount(),
+                candidateSettings.maxNpcDistance()
         );
         PlayerTransactionStateListener newStateListener = new PlayerTransactionStateListener(newTransactions);
 
         try {
+            getServer().getPluginManager().registerEvents(newCitizensListener, this);
+            getServer().getPluginManager().registerEvents(newGuiListener, this);
+            getServer().getPluginManager().registerEvents(newStateListener, this);
+        } catch (RuntimeException exception) {
+            unregisterListeners(newCitizensListener, newGuiListener, newStateListener);
+            newAudit.close();
+            return new ReloadResult(false, "Listener runtime baru gagal diregistrasikan. Runtime lama tetap aktif: "
+                    + exception.getMessage());
+        }
+
+        try {
             stockRepository.reconcile(candidate);
         } catch (IOException exception) {
+            unregisterListeners(newCitizensListener, newGuiListener, newStateListener);
             newAudit.close();
             return new ReloadResult(false, "Stock reconcile gagal. Runtime lama tetap aktif: " + exception.getMessage());
         }
 
         closeOpenShopInventories();
-
-        getServer().getPluginManager().registerEvents(newCitizensListener, this);
-        getServer().getPluginManager().registerEvents(newGuiListener, this);
-        getServer().getPluginManager().registerEvents(newStateListener, this);
-
         unregisterRuntimeListeners();
 
         if (transactionService != null) {
@@ -187,8 +212,13 @@ public final class CdrVephilimEconomy extends JavaPlugin {
         shopGuiListener = newGuiListener;
         transactionStateListener = newStateListener;
 
+        reloadConfig();
         logDiagnostics("Reload");
-        return new ReloadResult(true, "Reload aman selesai. Restart server tidak diperlukan.");
+
+        String warningSuffix = candidate.configurationWarningCount() > 0
+                ? " Ada " + candidate.configurationWarningCount() + " warning konfigurasi; cek console."
+                : "";
+        return new ReloadResult(true, "Reload aman selesai. Restart server tidak diperlukan." + warningSuffix);
     }
 
     public String statusSummary() {
@@ -200,7 +230,8 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                 + ", enabled=" + shopRegistry.enabledShopCount()
                 + ", npcBindings=" + shopRegistry.activeBindingCount()
                 + ", listings=" + shopRegistry.listingCount()
-                + ", stockEntries=" + stockRepository.entryCount();
+                + ", stockEntries=" + stockRepository.entryCount()
+                + ", configWarnings=" + shopRegistry.configurationWarningCount();
     }
 
     private void installRuntime(ShopRegistry registry, RuntimeSettings settings) throws IOException {
@@ -255,23 +286,38 @@ public final class CdrVephilimEconomy extends JavaPlugin {
         );
     }
 
+    private RuntimeSettings readSettingsStrictFromDisk() throws IOException {
+        File configFile = new File(getDataFolder(), "config.yml");
+        YamlConfiguration yaml = new YamlConfiguration();
+        try {
+            yaml.load(configFile);
+        } catch (InvalidConfigurationException exception) {
+            throw new IOException("Invalid YAML in config.yml: " + exception.getMessage(), exception);
+        }
+        return readSettings(yaml);
+    }
+
     private RuntimeSettings readSettings() {
-        int maxAmount = clamp(getConfig().getInt("transaction.max-amount", 64), 1, 2304);
-        int bulkAmount = clamp(getConfig().getInt("transaction.bulk-amount", 16), 1, maxAmount);
-        long cooldownMillis = Math.max(0L, getConfig().getLong("transaction.cooldown-ms", 250L));
-        double maxNpcDistance = clamp(getConfig().getDouble("npc.max-transaction-distance", 6.0D), 1.0D, 32.0D);
+        return readSettings(getConfig());
+    }
+
+    private RuntimeSettings readSettings(ConfigurationSection config) {
+        int maxAmount = clamp(config.getInt("transaction.max-amount", 64), 1, 2304);
+        int bulkAmount = clamp(config.getInt("transaction.bulk-amount", 16), 1, maxAmount);
+        long cooldownMillis = Math.max(0L, config.getLong("transaction.cooldown-ms", 250L));
+        double maxNpcDistance = clamp(config.getDouble("npc.max-transaction-distance", 6.0D), 1.0D, 32.0D);
 
         return new RuntimeSettings(
                 maxAmount,
                 bulkAmount,
                 cooldownMillis,
                 maxNpcDistance,
-                getConfig().getBoolean("audit.log-rejected-transactions", true),
-                getConfig().getBoolean("audit.log-busy-rejections", false),
-                getConfig().getBoolean("audit.local-enabled", true),
-                getConfig().getBoolean("audit.discord.enabled", false),
-                getConfig().getBoolean("audit.discord.include-rejected", false),
-                getConfig().getString("audit.discord.webhook-url", "")
+                config.getBoolean("audit.log-rejected-transactions", true),
+                config.getBoolean("audit.log-busy-rejections", false),
+                config.getBoolean("audit.local-enabled", true),
+                config.getBoolean("audit.discord.enabled", false),
+                config.getBoolean("audit.discord.include-rejected", false),
+                config.getString("audit.discord.webhook-url", "")
         );
     }
 
@@ -287,7 +333,8 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                 + ", npcBindings=" + shopRegistry.activeBindingCount()
                 + ", listings=" + shopRegistry.listingCount()
                 + ", stockEntries=" + stockRepository.entryCount()
-                + ", rejectedDefinitions=" + shopRegistry.rejectedDefinitionCount() + ".");
+                + ", rejectedDefinitions=" + shopRegistry.rejectedDefinitionCount()
+                + ", configWarnings=" + shopRegistry.configurationWarningCount() + ".");
         getLogger().info("Transaction guard: cooldown=" + settings.cooldownMillis() + "ms, bulk=" + settings.bulkAmount()
                 + ", max=" + settings.maxAmount() + ", npcDistance=" + settings.maxNpcDistance() + ".");
         getLogger().info("Audit policy: rejected=" + settings.auditRejected()
@@ -312,6 +359,13 @@ public final class CdrVephilimEconomy extends JavaPlugin {
             HandlerList.unregisterAll(transactionStateListener);
             transactionStateListener = null;
         }
+    }
+
+    private static void unregisterListeners(CitizensNpcListener citizens, ShopGuiListener gui,
+                                            PlayerTransactionStateListener state) {
+        HandlerList.unregisterAll(citizens);
+        HandlerList.unregisterAll(gui);
+        HandlerList.unregisterAll(state);
     }
 
     private void closeOpenShopInventories() {
