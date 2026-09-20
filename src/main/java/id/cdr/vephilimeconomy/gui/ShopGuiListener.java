@@ -1,6 +1,7 @@
 package id.cdr.vephilimeconomy.gui;
 
 import id.cdr.vephilimeconomy.economy.EconomyBridge;
+import id.cdr.vephilimeconomy.pricing.DynamicPricingService;
 import id.cdr.vephilimeconomy.shop.Shop;
 import id.cdr.vephilimeconomy.shop.ShopListing;
 import id.cdr.vephilimeconomy.shop.ShopRegistry;
@@ -108,12 +109,26 @@ public final class ShopGuiListener implements Listener {
             return;
         }
 
+        DynamicPricingService.ChurnDecision churn = gui.checkMarketChurn(player, shop, listing, type);
+        if (!churn.allowed()) {
+            long seconds = Math.max(1L, (churn.remainingMillis() + 999L) / 1000L);
+            String message = plugin.getConfig().getString("messages.market-churn",
+                            "<yellow>Tunggu {seconds} detik sebelum membalik arah transaksi pada komoditas ini.</yellow>")
+                    .replace("{seconds}", Long.toString(seconds));
+            sendRaw(player, message);
+            return;
+        }
+
         TransactionResult result = transactions.execute(player, shop, listing, type, amount, displayedPrice);
         sendResult(player, listing, type, result);
 
         if (result.failure() == TransactionFailure.SAFETY_STOP) {
             player.closeInventory();
             return;
+        }
+
+        if (result.success()) {
+            gui.recordSuccessfulMarketTransaction(player, shop, listing, type);
         }
 
         if (result.success() || result.failure() == TransactionFailure.PRICE_CHANGED) {
@@ -125,9 +140,6 @@ public final class ShopGuiListener implements Listener {
     public void onDrag(InventoryDragEvent event) {
         Inventory top = event.getView().getTopInventory();
         if (top.getHolder() instanceof ShopInventoryHolder) {
-            // Hard-cancel every drag while the shop view is open. This also prevents
-            // unusual drag distributions confined to the player inventory from
-            // racing a transaction/GUI refresh in the same view.
             event.setCancelled(true);
         }
     }
