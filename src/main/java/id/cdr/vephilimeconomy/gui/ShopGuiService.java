@@ -20,10 +20,12 @@ public final class ShopGuiService {
     private final StockRepository stocks;
     private final EconomyBridge economy;
     private final MiniMessage miniMessage = MiniMessage.miniMessage();
+    private final int bulkAmount;
 
-    public ShopGuiService(StockRepository stocks, EconomyBridge economy) {
+    public ShopGuiService(StockRepository stocks, EconomyBridge economy, int bulkAmount) {
         this.stocks = stocks;
         this.economy = economy;
+        this.bulkAmount = Math.max(1, bulkAmount);
     }
 
     public void open(Player player, Shop shop) {
@@ -33,29 +35,49 @@ public final class ShopGuiService {
         holder.attach(inventory);
 
         for (ShopListing listing : shop.listings().values()) {
-            inventory.setItem(listing.slot(), render(shop, listing));
+            inventory.setItem(listing.slot(), render(player, shop, listing));
         }
 
         player.openInventory(inventory);
     }
 
-    private ItemStack render(Shop shop, ShopListing listing) {
+    private ItemStack render(Player player, Shop shop, ShopListing listing) {
         ItemStack stack = new ItemStack(listing.material());
         ItemMeta meta = stack.getItemMeta();
-        meta.displayName(Component.text(prettyName(listing.material().name())));
+        meta.displayName(miniMessage.deserialize("<white><bold>" + escapeMini(prettyName(listing.material().name())) + "</bold></white>"));
 
         List<Component> lore = new ArrayList<>();
         int stock = stocks.getStock(shop.id(), listing.id());
-        lore.add(miniMessage.deserialize("<gray>Stok: <white>" + stock + "</white>/<white>" + listing.maxStock() + "</white></gray>"));
+
+        lore.add(miniMessage.deserialize("<gray>Stok pedagang: <white>" + stock + "</white>/<white>"
+                + listing.maxStock() + "</white></gray>"));
+        lore.add(miniMessage.deserialize("<gray>Saldo kamu: <gold>"
+                + escapeMini(economy.format(economy.balance(player))) + "</gold></gray>"));
         lore.add(Component.empty());
 
         if (listing.mode().canBuy()) {
-            lore.add(miniMessage.deserialize("<green>Beli: <gold>" + escapeMini(economy.format(listing.buyPrice())) + "</gold></green>"));
-            lore.add(miniMessage.deserialize("<dark_gray>Klik kiri: beli 1 • Shift+kiri: beli banyak</dark_gray>"));
+            lore.add(miniMessage.deserialize("<green>Harga beli: <gold>"
+                    + escapeMini(economy.format(listing.buyPrice())) + "</gold></green>"));
+            if (stock <= 0) {
+                lore.add(miniMessage.deserialize("<red><bold>STOK HABIS</bold></red>"));
+            } else {
+                lore.add(miniMessage.deserialize("<dark_gray>Kiri: beli 1 • Shift+kiri: beli "
+                        + bulkAmount + "</dark_gray>"));
+            }
         }
+
         if (listing.mode().canSell()) {
-            lore.add(miniMessage.deserialize("<aqua>Jual: <gold>" + escapeMini(economy.format(listing.sellPrice())) + "</gold></aqua>"));
-            lore.add(miniMessage.deserialize("<dark_gray>Klik kanan: jual 1 • Shift+kanan: jual banyak</dark_gray>"));
+            if (listing.mode().canBuy()) {
+                lore.add(Component.empty());
+            }
+            lore.add(miniMessage.deserialize("<aqua>Harga jual: <gold>"
+                    + escapeMini(economy.format(listing.sellPrice())) + "</gold></aqua>"));
+            if (stock >= listing.maxStock()) {
+                lore.add(miniMessage.deserialize("<yellow><bold>STOK PEDAGANG PENUH</bold></yellow>"));
+            } else {
+                lore.add(miniMessage.deserialize("<dark_gray>Kanan: jual 1 • Shift+kanan: jual "
+                        + bulkAmount + "</dark_gray>"));
+            }
         }
 
         meta.lore(lore);
