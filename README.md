@@ -17,10 +17,10 @@ Fokus utamanya adalah membuat perdagangan terasa sebagai bagian dari dunia rolep
 
 ## Status
 
-**Current development candidate: `0.1.0-beta.2-RC2`**  
+**Current development candidate: `0.1.0-beta.2-RC3`**  
 **Frozen core baseline: `0.1.0-beta.1`**
 
-RC1 membuka command-driven shop management. RC2 menambahkan formal `shops.yml` schema v2 + migration, Discord administrative audit terpisah, dan QoL command untuk layout/diagnostic shop tanpa mengubah transaction safety foundation beta.1.
+RC1 membuka command-driven shop management. RC2 menambahkan formal `shops.yml` schema v2, Discord administrative audit, dan QoL management. RC3 menutup crash-window perubahan konfigurasi admin dan memperkeras recovery migration sebelum beta.2 final.
 
 ## beta.2 Shop Management
 
@@ -51,14 +51,33 @@ Setiap mutation config melewati candidate validation dan runtime apply tanpa res
 
 ## shops.yml Schema v2
 
-RC2 memakai:
+RC3 tetap memakai:
 
 ```yaml
 meta:
   schema: 2
 ```
 
-File beta.1/RC1 tanpa schema dianggap legacy v1 dan dimigrasikan otomatis ketika shop management diinisialisasi. Sebelum migration dibuat backup `shops.yml.schema-v1.bak`. Schema yang lebih baru dari kemampuan plugin ditolak fail-closed supaya plugin lama tidak menulis format yang tidak dipahami.
+File beta.1/RC1 tanpa schema dianggap legacy v1 dan dimigrasikan otomatis ketika shop management diinisialisasi. Sebelum migration dibuat backup `shops.yml.schema-v1.bak`. Migration sekarang memiliki pending marker + SHA-256 verification; jika server mati ketika migration berlangsung, RC3 dapat membedakan migration yang sudah committed, perlu diulang, atau perlu dipulihkan dari backup. Schema yang lebih baru dari kemampuan plugin tetap ditolak fail-closed.
+
+## Administrative Mutation Recovery
+
+RC3 menambahkan durable journal untuk perubahan `shops.yml` dari command admin. Sebelum live config diganti, plugin menyimpan hash konfigurasi original dan candidate ke:
+
+```text
+shops.yml.admin.pending
+```
+
+Jika server mati pada window antara replace file dan runtime reload, startup berikutnya membandingkan hash live dengan original/candidate. Hasil recovery dicatat ke:
+
+```text
+shops.yml.admin.pending.last
+logs/admin-recovery.log
+```
+
+Jika live config tidak cocok dengan original maupun candidate, mutation shop masuk **fail-closed**. BUY/SELL core tidak otomatis diubah oleh recovery admin, tetapi command mutation/stock admin diblokir sampai state diklarifikasi.
+
+`/cve shop schema` dan `/cve shop validate` sekarang juga menampilkan status recovery schema/admin mutation.
 
 ## Discord Administrative Audit
 
@@ -116,12 +135,15 @@ Tidak ada command shop untuk player.
 
 - `shops.yml` — definisi shop schema v2.
 - `shops.yml.schema-v1.bak` — backup migration legacy.
+- `shops.yml.schema.pending` / `.last` — migration crash-recovery evidence.
 - `shops.yml.admin.bak` — snapshot sebelum admin mutation.
+- `shops.yml.admin.pending` / `.last` — administrative mutation crash-recovery evidence.
+- `logs/admin-recovery.log` — riwayat recovery mutation admin.
 - `stock.yml` — mutable runtime stock.
 - `logs/audit.log` — transaction audit.
 - `logs/admin-audit.log` — administrative audit.
 - `safety.lock` — persistent economy circuit breaker.
-- `pending-transactions/` — crash-window recovery evidence.
+- `pending-transactions/` — transaction crash-window recovery evidence.
 
 ## Dokumentasi
 
@@ -129,12 +151,13 @@ Tidak ada command shop untuk player.
 - [`CHANGELOG.md`](CHANGELOG.md) — riwayat perubahan.
 - [`docs/BETA1_FINAL.md`](docs/BETA1_FINAL.md) — frozen core baseline beta.1.
 - [`docs/BETA2_ADMIN_COMMANDS.md`](docs/BETA2_ADMIN_COMMANDS.md) — command dan permission beta.2.
-- [`docs/BETA2_TEST_PLAN.md`](docs/BETA2_TEST_PLAN.md) — QA beta.2 RC2.
+- [`docs/BETA2_TEST_PLAN.md`](docs/BETA2_TEST_PLAN.md) — QA beta.2.
+- [`docs/BETA2_RC3.md`](docs/BETA2_RC3.md) — recovery hardening RC3.
 - [`docs/ECONOMY_DESIGN.md`](docs/ECONOMY_DESIGN.md) — konsep ekonomi.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — arsitektur core.
 
 ## Next beta.2 hardening
 
-Setelah RC2 runtime QA, fase berikutnya fokus pada final management regression, migration/recovery edge-case, dan operasional admin sebelum `0.1.0-beta.2` final.
+RC3 adalah kandidat hardening terakhir sebelum `0.1.0-beta.2` final. Jika runtime regression, migration recovery, admin mutation recovery, dan BUY/SELL core tetap aman, tahap berikutnya adalah finalisasi beta.2.
 
 Plugin ini dikembangkan oleh **MenkiPlugcore** untuk project **Vephilim Roleplay**.
