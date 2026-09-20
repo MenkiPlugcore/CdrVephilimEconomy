@@ -2,7 +2,7 @@
 
 Dokumen ini dipakai sebelum `beta.1` dianggap siap dipasang sebagai build uji Vephilim Roleplay.
 
-Target build saat ini: `0.1.0-beta.1-RC3`.
+Target build saat ini: `0.1.0-beta.1-RC4`.
 
 ## Prasyarat
 
@@ -35,6 +35,7 @@ Target build saat ini: `0.1.0-beta.1-RC3`.
 - [ ] Definisi shop invalid membuat reload gagal dan runtime lama tetap aktif.
 - [ ] `config.yml` dengan syntax YAML invalid membuat reload gagal dan runtime lama tetap aktif.
 - [ ] `/cve status` tetap menunjukkan runtime lama setelah reload gagal.
+- [ ] Jika safety stop sudah aktif, `/cve reload` tidak mereset safety latch.
 
 ## Mode Transaksi
 
@@ -53,11 +54,12 @@ Harga saja tidak mengaktifkan arah transaksi.
 
 ## Startup Diagnostics
 
-- [ ] Console menampilkan version RC3 saat plugin enable.
-- [ ] Console menampilkan jumlah shop, shop enabled, NPC binding, listing, stock entry, rejected definition, dan config warning.
+- [ ] Console menampilkan version RC4 saat plugin enable.
+- [ ] Console menampilkan jumlah shop, shop enabled, NPC binding, listing, stock entry, rejected definition, config warning, dan safety state.
 - [ ] Jika tidak ada active NPC binding, plugin tetap enable tetapi memberi warning yang jelas.
 - [ ] Vault economy provider yang dipakai tercetak di console.
 - [ ] Nilai transaction guard efektif (cooldown, bulk, max amount, NPC distance) tercetak di console.
+- [ ] `/cve status` menampilkan `safety=OK` pada kondisi normal.
 
 ## Functional Tests
 
@@ -129,6 +131,22 @@ Harga saja tidak mengaktifkan arah transaksi.
 - [ ] Kegagalan persistence menghasilkan audit `FAILED` dan mencoba rollback.
 - [ ] Player quit menghapus cooldown state tanpa mempengaruhi stock/saldo.
 
+## Transaction Safety Stop / Circuit Breaker
+
+Bagian ini sengaja untuk failure injection/staging; jangan dilakukan di server production dengan data penting.
+
+- [ ] Kondisi normal menunjukkan `/cve status` dengan `safety=OK`.
+- [ ] Simulasikan kegagalan write `stock.yml` saat BUY/SELL; transaksi gagal dan safety latch menjadi `STOPPED`.
+- [ ] Setelah safety stop aktif, semua transaksi BUY/SELL berikutnya ditolak tanpa mutation saldo/item/stock.
+- [ ] GUI ditutup ketika player mencoba transaksi saat safety stop aktif.
+- [ ] Player menerima `messages.safety-stop`.
+- [ ] `/cve status` menampilkan timestamp stop dan ringkasan reason.
+- [ ] `/cve reload` tetap dapat reload config/shop tetapi safety latch tetap STOPPED.
+- [ ] Pada BUY persistence failure, jika item rollback gagal, refund tidak dilakukan otomatis sehingga tidak tercipta item gratis + uang kembali.
+- [ ] Pada SELL persistence failure, jika payout rollback gagal, item tidak dikembalikan otomatis sehingga tidak tercipta kombinasi payout + item kembali.
+- [ ] Failure transaction yang memicu safety stop tercatat sebagai `FAILED` dengan intended total dan detail compensation.
+- [ ] Setelah investigasi/fix storage dan restart server/plugin, safety kembali `OK` dan stock/saldo diverifikasi manual sebelum membuka ekonomi lagi.
+
 ## Stock Persistence / Recovery
 
 - [ ] First boot menghasilkan `stock.yml`, `stock.yml.bak`, dan `stock.yml.initialized`.
@@ -149,6 +167,7 @@ Harga saja tidak mengaktifkan arah transaksi.
 
 - [ ] Transaksi sukses tercatat di `plugins/CdrVephilimEconomy/logs/audit.log` dengan status `SUCCESS`.
 - [ ] Internal transaction failure tercatat dengan status `FAILED`.
+- [ ] `FAILED` mencatat intended transaction total untuk membantu rekonsiliasi.
 - [ ] Jika `audit.log-rejected-transactions: true`, saldo kurang, stock kurang, item kurang, inventory penuh, max-stock, dan mode tidak diizinkan tercatat sebagai `REJECTED`.
 - [ ] `BUSY` tidak tercatat secara default ketika `audit.log-busy-rejections: false`.
 - [ ] Mengaktifkan `audit.log-busy-rejections` membuat BUSY/cooldown rejection ikut tercatat.
@@ -171,4 +190,4 @@ Harga saja tidak mengaktifkan arah transaksi.
 
 ## Exit Criteria beta.1
 
-`beta.1` baru dianggap lulus jika jalur BUY/SELL utama, safe runtime reload, NPC-only proximity guard, persistence/recovery stock, config validation, audit trail, clean shutdown, dan skenario anti-dupe di atas lolos di server uji. Fitur governance, admin GUI, dynamic pricing, dan market event tetap di luar scope beta.1.
+`beta.1` baru dianggap lulus jika jalur BUY/SELL utama, safe runtime reload, NPC-only proximity guard, persistence/recovery stock, config validation, audit trail, clean shutdown, safety-stop behavior, dan skenario anti-dupe di atas lolos di server uji. Fitur governance, admin GUI, dynamic pricing, dan market event tetap di luar scope beta.1.
