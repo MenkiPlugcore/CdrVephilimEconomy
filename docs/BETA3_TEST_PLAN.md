@@ -1,6 +1,6 @@
-# beta.3 RC2 Test Plan — CdrVephilimEconomy
+# beta.3 RC3 Test Plan — CdrVephilimEconomy
 
-Target build: `0.1.0-beta.3-RC2`.
+Target build: `0.1.0-beta.3-RC3`.
 
 ## Preconditions
 
@@ -12,140 +12,127 @@ Target build: `0.1.0-beta.3-RC2`.
 
 ## Governance Storage
 
-- [ ] First startup membuat `governance.yml` schema v1.
-- [ ] `governance.yml.bak` muncul setelah mutation berikutnya.
+- [ ] `governance.yml` schema v1 tetap sehat.
 - [ ] `/cve governance status` menunjukkan governance healthy=true.
-- [ ] YAML governance corrupt membuat role-based governance fail-closed.
-- [ ] `cdrvephilimeconomy.admin` tetap dapat recovery walaupun governance storage rusak.
-- [ ] `/cve governance reload` memuat ulang file yang sudah diperbaiki.
+- [ ] Governance YAML corrupt membuat role-based governance fail-closed.
+- [ ] Full admin tetap dapat recovery.
+- [ ] `/cve governance reload` memuat ulang governance + quota ledger.
 
-## Role Assignment & Scope Regression
+## Role & Scope Regression
 
-- [ ] Grant Staff ke `blacksmith` sukses.
-- [ ] Grant Manager/Treasurer sesuai scope sukses.
-- [ ] Staff `blacksmith` ditolak untuk mutation `farmer`.
-- [ ] Scope `*` berlaku global.
-- [ ] Permission beta.2 eksplisit tetap menjadi backward-compatible override.
-- [ ] Grant/revoke tetap tercatat di `logs/admin-audit.log`.
+- [ ] ECONOMY_STAFF `blacksmith` hanya dapat mutation capability Staff pada `blacksmith`.
+- [ ] Mutation `farmer` ditolak.
+- [ ] ECONOMY_MANAGER mendapat capability Manager sesuai scope.
+- [ ] ROYAL_TREASURER scope `*` berlaku global.
+- [ ] Permission beta.2 eksplisit tetap menjadi operator override.
 
-## Approval Storage
+## Approval RC2 Regression
 
-Runtime evidence:
+- [ ] Staff price change >20% membuat approval, tidak direct.
+- [ ] Manager price change >50% membuat approval.
+- [ ] Staff stock ADD/REMOVE >128 membuat approval.
+- [ ] Manager stock ADD/REMOVE >1024 membuat approval.
+- [ ] Staff/Manager stock SET membuat approval.
+- [ ] Anti-self-approval tetap aktif.
+- [ ] Reviewer hierarchy + scope tetap benar.
+- [ ] Approval expiry/cancel/reject tetap benar.
+- [ ] `EXECUTING` evidence dan manual recovery tetap fail-closed.
+
+## RC3 Quota Storage
+
+Runtime evidence baru:
 
 ```text
-governance-approvals.yml
-governance-approvals.yml.bak
-governance-approvals.yml.tmp
+governance-usage.yml
+governance-usage.yml.bak
+governance-usage.yml.tmp
 ```
 
-- [ ] Startup pertama membuat `governance-approvals.yml` schema v1.
-- [ ] Mutation approval berikutnya membuat `.bak`.
-- [ ] `/cve governance approval status` menunjukkan healthy=true, recoveryBlocked=false.
-- [ ] `/cve status` dan `/cve doctor` tetap berfungsi; output command menampilkan ringkasan approval.
-- [ ] Approval YAML corrupt membuat approval subsystem fail-closed tanpa mematikan BUY/SELL core.
-- [ ] `/cve governance approval reload` setelah file diperbaiki mengembalikan health.
+- [ ] Startup pertama membuat `governance-usage.yml` schema v1.
+- [ ] Mutation direct berikutnya membuat `.bak`.
+- [ ] `/cve governance status` menampilkan quota healthy=true.
+- [ ] `/cve governance who <player>` menampilkan window, used price, used stock, cooldown, dan last mutation.
+- [ ] Corrupt `governance-usage.yml` membuat direct role-only price/stock fail-closed.
+- [ ] BUY/SELL core tetap aktif bila quota ledger rusak.
+- [ ] Admin/Treasurer/operator permission tetap dapat recovery/operasi.
 
-## Price Approval — ECONOMY_STAFF
+## ECONOMY_STAFF Price Rolling Quota
 
-Default Staff limit: 20% per operasi.
-
-- [ ] Price change <=20% langsung sukses tanpa approval.
-- [ ] Price change >20% tidak langsung dieksekusi; menghasilkan approval ID.
-- [ ] Harga belum berubah sebelum approval disetujui.
-- [ ] `/cve governance approval list` menampilkan request.
-- [ ] `/cve governance approval show <id>` menampilkan requester, role, shop/listing, before/target, expiry.
-- [ ] Requester tidak dapat approve request sendiri.
-- [ ] Requester dapat `/cve governance approval cancel <id>`.
-- [ ] ECONOMY_MANAGER pada scope yang sama dapat approve request Staff.
-- [ ] Manager tanpa scope shop terkait ditolak.
-- [ ] Setelah approve, harga berubah ke target dan status request menjadi APPROVED.
-- [ ] Jika harga berubah lewat admin sebelum approve, approval dianggap stale dan tidak menimpa harga terbaru.
-- [ ] Perubahan harga dari base 0 menghasilkan approval, bukan mutation langsung.
-
-## Price Approval — ECONOMY_MANAGER
-
-Default Manager limit: 50% per operasi.
-
-- [ ] Price change <=50% langsung sukses.
-- [ ] Price change >50% membuat approval request.
-- [ ] Manager tidak dapat approve request miliknya sendiri.
-- [ ] Manager peer dengan role sama tidak dapat approve request tersebut.
-- [ ] ROYAL_TREASURER dengan scope sesuai dapat approve.
-- [ ] Full admin / `cdrvephilimeconomy.governance.approve` dapat review sebagai operator override.
-
-## Runtime Stock Approval
-
-Default limits: Staff 128, Manager 1024.
-
-- [ ] Staff ADD/REMOVE <=128 langsung sukses.
-- [ ] Staff ADD/REMOVE >128 menghasilkan approval.
-- [ ] Staff `SET` berapa pun menghasilkan approval.
-- [ ] Manager ADD/REMOVE <=1024 langsung sukses.
-- [ ] Manager ADD/REMOVE >1024 menghasilkan approval.
-- [ ] Manager `SET` menghasilkan approval.
-- [ ] Approved stock request dieksekusi memakai validation `ShopAdminService`; stock tidak boleh keluar dari 0..max-stock.
-- [ ] Bila stock berubah sebelum approval, ADD/REMOVE diterapkan relatif terhadap stock saat approve; bounds tetap divalidasi.
-- [ ] Treasurer/admin dapat melakukan SET langsung sesuai capability/permission tanpa approval role guardrail.
-
-## Approval Expiry / Queue Limits
-
-Default config:
+Default:
 
 ```yaml
-governance:
-  approval:
-    enabled: true
-    expiry-minutes: 10
-    max-pending-per-requester: 5
+window-minutes: 60
+max-price-percent-sum: 40.0
+cooldown-seconds: 15
 ```
 
-- [ ] Pending request expired otomatis berubah menjadi EXPIRED ketika approval subsystem diakses setelah expiry.
-- [ ] EXPIRED request tidak dapat diapprove.
-- [ ] Request target yang sama oleh requester yang sama tidak dapat diduplikasi saat masih PENDING.
-- [ ] Requester tidak dapat melewati `max-pending-per-requester`.
-- [ ] `approval.enabled: false` membuat perubahan sensitif ditolak karena queue dinonaktifkan; tidak ada mutation langsung.
+Untuk testing cepat, cooldown boleh sementara diturunkan di staging lalu `/cve reload`.
 
-## Reject / Cancel
+- [ ] Harga 100 -> 120 memakai sekitar 20 quota points.
+- [ ] Setelah cooldown, 120 -> 144 memakai sekitar 20 points lagi.
+- [ ] Usage menjadi sekitar 40/40.
+- [ ] Direct price change berikutnya yang masih <=20% per operasi diblokir rolling quota.
+- [ ] Perubahan >20% tetap masuk approval RC2 dan tidak dianggap direct quota reservation.
+- [ ] Perubahan harga no-op tidak mengonsumsi quota.
+- [ ] Price quota dihitung absolute; naik/turun tetap menambah usage, sehingga oscillation tidak mengurangi quota.
 
-- [ ] Reviewer yang memiliki hierarchy/scope dapat reject request.
-- [ ] Anti-self-approval juga berlaku pada reject; requester memakai cancel untuk membatalkan request sendiri.
-- [ ] Cancel oleh requester mengubah status menjadi CANCELLED.
-- [ ] Governance admin dapat cancel pending request untuk recovery/operasional.
-- [ ] REJECTED/CANCELLED tidak mengeksekusi mutation shop.
+## ECONOMY_MANAGER Price Rolling Quota
 
-## Crash-window Approval Recovery — STAGING ONLY
+Default:
 
-Approval memakai state `EXECUTING` yang dipersist **sebelum** ShopAdminService dipanggil.
-
-- [ ] Buat pending approval pada staging.
-- [ ] Simulasikan/siapkan `EXECUTING` evidence sebelum restart.
-- [ ] Startup mendeteksi EXECUTING dan status menjadi `recoveryBlocked=true`.
-- [ ] Approval baru/approve/reject/cancel diblokir sampai evidence diselesaikan.
-- [ ] Admin memeriksa `shops.yml`, stock, dan `logs/admin-audit.log` untuk menentukan apakah mutation sudah dieksekusi.
-- [ ] Jika sudah dieksekusi: `/cve governance approval recover <id> executed CONFIRM`.
-- [ ] Jika belum dieksekusi: `/cve governance approval recover <id> not-executed CONFIRM`.
-- [ ] Setelah semua EXECUTING evidence selesai, recoveryBlocked kembali false.
-- [ ] Recovery tidak otomatis replay mutation.
-
-Jangan melakukan crash/recovery drill destruktif di server production.
-
-## Audit
-
-`logs/admin-audit.log` harus mencatat event relevan:
-
-```text
-GOV_APPROVAL_REQUEST
-GOV_APPROVAL_APPROVE_REQUEST
-GOV_APPROVAL_EXECUTE_SUCCESS
-GOV_APPROVAL_EXECUTE_FAILED
-GOV_APPROVAL_REJECTED
-GOV_APPROVAL_CANCELLED
-GOV_APPROVAL_EXPIRED
-GOV_APPROVAL_RECOVERY_RESOLVED
+```yaml
+window-minutes: 60
+max-price-percent-sum: 100.0
+cooldown-seconds: 5
 ```
 
-- [ ] Discord administrative audit aktif menerima event approval secara async.
-- [ ] Kegagalan menulis REQUEST audit membuat approval request/review dibatalkan fail-closed.
+- [ ] Beberapa direct change <=50% dapat berjalan sampai cumulative usage mendekati 100.
+- [ ] Direct mutation yang membuat cumulative usage >100 diblokir.
+- [ ] >50% per operasi tetap masuk approval tanpa direct quota reservation.
+
+## Runtime Stock Rolling Quota
+
+Default Staff: 256 per 60 menit. Default Manager: 4096 per 60 menit.
+
+- [ ] Staff ADD 128 direct sukses dan reserve 128.
+- [ ] Setelah cooldown, REMOVE 64 direct sukses dan cumulative usage 192.
+- [ ] Setelah cooldown, ADD 64 direct sukses dan cumulative usage 256.
+- [ ] Direct ADD/REMOVE berikutnya diblokir walaupun nilai per operasi <=128.
+- [ ] Staff ADD/REMOVE >128 tetap masuk approval RC2, bukan rolling direct quota.
+- [ ] Staff SET tetap masuk approval RC2.
+- [ ] Manager menggunakan limit rolling 4096 dengan pola yang sama.
+
+## Cooldown Anti-Burst
+
+- [ ] Setelah satu direct mutation Staff, direct price/stock mutation berikutnya dalam <15 detik diblokir.
+- [ ] Setelah cooldown lewat, mutation dapat lanjut jika rolling quota masih tersedia.
+- [ ] Manager default cooldown 5 detik.
+- [ ] Cooldown berlaku lintas price dan stock, bukan hanya command yang sama.
+- [ ] Per-operation sensitive change yang diarahkan ke approval tidak membuat direct quota reservation.
+
+## Permission / Role Bypass
+
+- [ ] `cdrvephilimeconomy.admin` bypass rolling quota.
+- [ ] Royal Treasurer bypass rolling quota.
+- [ ] `cdrvephilimeconomy.shop.price` eksplisit bypass price quota.
+- [ ] `cdrvephilimeconomy.shop.stock` eksplisit bypass stock quota.
+- [ ] Bypass tetap tercakup administrative audit dari mutation shop normal.
+
+## Persistence / Restart
+
+- [ ] Setelah direct mutation, restart server.
+- [ ] Rolling usage tetap terbaca dari `governance-usage.yml`.
+- [ ] Restart tidak mereset cooldown/window abuse protection secara diam-diam.
+- [ ] Event yang sudah keluar retention tidak memengaruhi quota baru.
+
+## Conservative Reservation
+
+Reservation dibuat sebelum mutation shop dieksekusi.
+
+- [ ] Reservation muncul di ledger sebelum mutation direct diproses.
+- [ ] Event `GOVERNANCE_QUOTA_RESERVED` muncul di `logs/admin-audit.log` bila writer tersedia.
+- [ ] Jika downstream mutation sengaja dibuat gagal di staging, quota reservation tetap ada sampai window expiry.
+- [ ] Kegagalan persistence quota membuat direct role mutation fail-closed, bukan dijalankan tanpa evidence.
 
 ## Core Regression
 
@@ -157,6 +144,6 @@ GOV_APPROVAL_RECOVERY_RESOLVED
 - [ ] `/cve shop schema`, `/cve shop validate`, `/cve doctor`, `/cve safety status` tetap bekerja.
 - [ ] Pending transaction/admin mutation recovery beta.1/beta.2 tidak berubah.
 
-## RC2 Exit Criteria
+## RC3 Exit Criteria
 
-RC2 lulus bila sensitive price/stock change membentuk durable approval request, hierarchy + scope reviewer benar, self-approval tidak mungkin, expiry/cancel bekerja, crash-window `EXECUTING` tidak dapat direplay otomatis, recovery manual meninggalkan evidence, permission beta.2 tetap kompatibel, dan core BUY/SELL tidak regression.
+RC3 lulus bila rolling quota bertahan lintas restart, repeated small mutations tidak dapat melewati cumulative limit, cooldown mencegah command burst, sensitive per-operation changes tetap menggunakan approval RC2, permission/operator bypass tetap backward compatible, corrupt quota ledger fail-closed hanya pada direct role mutation, dan core BUY/SELL tidak regression.
