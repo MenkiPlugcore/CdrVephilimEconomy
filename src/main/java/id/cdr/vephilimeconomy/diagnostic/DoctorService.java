@@ -6,6 +6,7 @@ import id.cdr.vephilimeconomy.shop.Shop;
 import id.cdr.vephilimeconomy.shop.ShopListing;
 import id.cdr.vephilimeconomy.shop.ShopRegistry;
 import id.cdr.vephilimeconomy.storage.StockRepository;
+import id.cdr.vephilimeconomy.transaction.PendingTransactionJournal;
 import id.cdr.vephilimeconomy.transaction.RuntimeSafetyState;
 import net.citizensnpcs.api.CitizensAPI;
 import net.citizensnpcs.api.npc.NPC;
@@ -16,7 +17,6 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
 import java.io.IOException;
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,15 +33,18 @@ public final class DoctorService {
     private final StockRepository stocks;
     private final AuditService audit;
     private final RuntimeSafetyState safety;
+    private final PendingTransactionJournal pendingJournal;
     private final EconomyBridge economy;
 
     public DoctorService(JavaPlugin plugin, ShopRegistry runtimeRegistry, StockRepository stocks,
-                         AuditService audit, RuntimeSafetyState safety, EconomyBridge economy) {
+                         AuditService audit, RuntimeSafetyState safety,
+                         PendingTransactionJournal pendingJournal, EconomyBridge economy) {
         this.plugin = plugin;
         this.runtimeRegistry = runtimeRegistry;
         this.stocks = stocks;
         this.audit = audit;
         this.safety = safety;
+        this.pendingJournal = pendingJournal;
         this.economy = economy;
     }
 
@@ -53,6 +56,7 @@ public final class DoctorService {
         checkShops(checks);
         checkNpcBindings(checks);
         checkStock(checks);
+        checkPendingTransactions(checks);
         checkFilesystem(checks);
         checkAudit(checks);
         checkSafety(checks);
@@ -60,7 +64,8 @@ public final class DoctorService {
     }
 
     private void checkRuntime(List<Check> checks) {
-        if (plugin.isEnabled() && runtimeRegistry != null && stocks != null && audit != null && safety != null && economy != null) {
+        if (plugin.isEnabled() && runtimeRegistry != null && stocks != null && audit != null
+                && safety != null && pendingJournal != null && economy != null) {
             checks.add(pass("runtime", "Plugin dan service utama aktif."));
         } else {
             checks.add(fail("runtime", "Ada runtime service yang belum siap."));
@@ -252,6 +257,29 @@ public final class DoctorService {
         }
         return new SnapshotStatus(Level.PASS, "schema OK, entries=" + expectedEntries
                 + (requireRuntimeMatch ? ", runtime sinkron." : ", snapshot valid."));
+    }
+
+    private void checkPendingTransactions(List<Check> checks) {
+        if (pendingJournal == null) {
+            checks.add(fail("pending-transactions", "Transaction journal service belum siap."));
+            return;
+        }
+
+        PendingTransactionJournal.ScanResult scan = pendingJournal.scanPending();
+        if (scan.total() == 0) {
+            checks.add(pass("pending-transactions", "Tidak ada transaksi setengah jalan yang menunggu recovery."));
+            return;
+        }
+
+        String detail = scan.summary();
+        if (scan.corrupt() > 0) {
+            detail += "; ada evidence corrupt/invalid";
+        }
+        checks.add(fail("pending-transactions", detail));
+        if (safety != null && !safety.isStopped()) {
+            checks.add(fail("pending-safety-correlation",
+                    "Pending transaction ditemukan tetapi safety state tidak STOPPED. Restart/investigasi wajib."));
+        }
     }
 
     private void checkFilesystem(List<Check> checks) {
