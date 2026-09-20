@@ -22,14 +22,22 @@ Target: membuktikan loop transaksi dasar dengan aman.
 - [x] Audit log lokal.
 - [x] Discord audit log dasar.
 - [x] Tidak ada command shop untuk player.
+- [x] NPC proximity guard.
+- [x] Strict config validation.
+- [x] Stock backup/recovery dan fail-closed data-loss guard.
+- [x] Startup diagnostics.
+- [x] Clean shutdown/flush.
+- [x] GUI transaction feedback final untuk kandidat uji.
 
-**Status implementasi:** core beta.1 sudah berhasil compile melalui GitHub Actions. Runtime QA di server Paper masih wajib dilakukan menggunakan [`docs/BETA1_TEST_PLAN.md`](docs/BETA1_TEST_PLAN.md) sebelum beta.1 dianggap release-ready.
+**Status implementasi:** `0.1.0-beta.1-RC1` sudah menjadi kandidat runtime QA. Core sudah berhasil disusun untuk Paper 1.21.11 / Java 21 dan build divalidasi melalui GitHub Actions. Runtime QA menggunakan [`docs/BETA1_TEST_PLAN.md`](docs/BETA1_TEST_PLAN.md) tetap wajib sebelum `beta.1` ditandai final.
 
 Exit criteria:
 - transaksi tidak bisa menghasilkan item/uang ganda;
 - stok selalu konsisten setelah buy/sell;
 - disconnect atau inventory penuh tidak merusak transaksi;
-- setiap transaksi penting tercatat.
+- kehilangan/corrupt snapshot stock tidak menyebabkan silent stock reset;
+- setiap transaksi penting tercatat;
+- restart/shutdown bersih mempertahankan state ekonomi.
 
 ## beta.2 — Shop Management
 
