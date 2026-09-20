@@ -2,7 +2,7 @@
 
 Dokumen ini dipakai sebelum `beta.1` dianggap siap dipasang sebagai build uji Vephilim Roleplay.
 
-Target build saat ini: `0.1.0-beta.1-RC1`.
+Target build saat ini: `0.1.0-beta.1-RC3`.
 
 ## Prasyarat
 
@@ -18,13 +18,43 @@ Target build saat ini: `0.1.0-beta.1-RC1`.
 2. Ambil ID NPC Citizens yang akan dijadikan pedagang.
 3. Isi `npc-id` pada shop uji.
 4. Ubah `enabled: true`.
-5. Restart server untuk beta.1 (belum ada runtime reload).
-6. Klik kanan NPC dan pastikan GUI shop terbuka.
+5. Jalankan `/cve reload`.
+6. Klik kanan NPC dan pastikan GUI shop terbuka tanpa restart server.
+
+## Runtime Reload
+
+- [ ] `/cve reload` dapat menerapkan perubahan `shops.yml` tanpa restart server.
+- [ ] `/cve reload` dapat menerapkan perubahan `config.yml` tanpa restart server.
+- [ ] GUI shop aktif ditutup saat reload.
+- [ ] NPC binding berubah sesuai `npc-id` terbaru setelah reload.
+- [ ] Harga BUY/SELL berubah sesuai config terbaru setelah reload.
+- [ ] `bulk-amount`, cooldown, max amount, dan NPC distance berubah sesuai config terbaru.
+- [ ] Stock listing existing tetap dipertahankan setelah reload.
+- [ ] Listing baru mulai dari `initial-stock`.
+- [ ] `shops.yml` dengan syntax YAML invalid membuat reload gagal dan runtime lama tetap aktif.
+- [ ] Definisi shop invalid membuat reload gagal dan runtime lama tetap aktif.
+- [ ] `config.yml` dengan syntax YAML invalid membuat reload gagal dan runtime lama tetap aktif.
+- [ ] `/cve status` tetap menunjukkan runtime lama setelah reload gagal.
+
+## Mode Transaksi
+
+`mode` adalah sumber kebenaran arah transaksi:
+
+- `BUY` = hanya dapat dibeli player.
+- `SELL` = hanya dapat dijual player.
+- `BUY_SELL` = dapat dibeli dan dijual.
+
+Harga saja tidak mengaktifkan arah transaksi.
+
+- [ ] Listing `mode: SELL` tetap tidak dapat dibeli walau `buy-price > 0`.
+- [ ] Kondisi di atas menghasilkan warning console setelah startup/reload.
+- [ ] Mengubah listing menjadi `mode: BUY_SELL` lalu `/cve reload` langsung mengaktifkan BUY tanpa restart.
+- [ ] Listing `mode: BUY` tetap tidak dapat dijual walau `sell-price > 0` dan menghasilkan warning console.
 
 ## Startup Diagnostics
 
-- [ ] Console menampilkan version RC1 saat plugin enable.
-- [ ] Console menampilkan jumlah shop, shop enabled, NPC binding, listing, stock entry, dan rejected definition.
+- [ ] Console menampilkan version RC3 saat plugin enable.
+- [ ] Console menampilkan jumlah shop, shop enabled, NPC binding, listing, stock entry, rejected definition, dan config warning.
 - [ ] Jika tidak ada active NPC binding, plugin tetap enable tetapi memberi warning yang jelas.
 - [ ] Vault economy provider yang dipakai tercetak di console.
 - [ ] Nilai transaction guard efektif (cooldown, bulk, max amount, NPC distance) tercetak di console.
@@ -48,8 +78,8 @@ Target build saat ini: `0.1.0-beta.1-RC1`.
 
 ### BUY
 
-- [ ] Klik kiri membeli 1 item.
-- [ ] Shift + klik kiri membeli bulk amount sesuai config.
+- [x] Klik kiri membeli 1 item — lolos pengujian awal user pada Blacksmith.
+- [x] Shift + klik kiri membeli bulk 16 — lolos pengujian awal user pada Blacksmith.
 - [ ] `bulk-amount` tidak pernah efektif melebihi `max-amount`.
 - [ ] Saldo berkurang tepat sesuai harga.
 - [ ] Stock berkurang tepat sesuai jumlah beli.
@@ -61,8 +91,8 @@ Target build saat ini: `0.1.0-beta.1-RC1`.
 
 ### SELL
 
-- [ ] Klik kanan menjual 1 item.
-- [ ] Shift + klik kanan menjual bulk amount sesuai config.
+- [x] Klik kanan menjual 1 item — lolos pengujian awal user pada Blacksmith.
+- [x] Shift + klik kanan menjual bulk 16 — lolos pengujian awal user pada Blacksmith.
 - [ ] Saldo bertambah tepat sesuai harga.
 - [ ] Stock bertambah tepat sesuai jumlah jual.
 - [ ] SELL ditolak jika listing tidak mengizinkan SELL.
@@ -79,6 +109,8 @@ Target build saat ini: `0.1.0-beta.1-RC1`.
 - [ ] Material invalid/AIR ditolak.
 - [ ] Mode selain BUY/SELL/BUY_SELL ditolak.
 - [ ] Harga negatif, nol pada mode aktif, NaN/Infinity, atau stock bounds invalid ditolak.
+- [ ] Slot listing negatif ditolak.
+- [ ] Slot listing `>= size` ditolak.
 - [ ] Duplicate slot dalam satu shop ditolak.
 - [ ] Duplicate NPC ID antar shop aktif ditolak tanpa menghasilkan binding parsial.
 - [ ] Shop invalid tidak ikut dimuat ke stock runtime.
@@ -92,7 +124,7 @@ Target build saat ini: `0.1.0-beta.1-RC1`.
 - [ ] Stock tidak pernah menjadi negatif.
 - [ ] Stock tidak pernah melewati `max-stock`.
 - [ ] Restart server mempertahankan stock dari `stock.yml`.
-- [ ] Config `initial-stock` tidak mereset stock runtime setelah restart.
+- [ ] Config `initial-stock` tidak mereset stock runtime setelah restart/reload.
 - [ ] Economy failure tidak menghasilkan item gratis.
 - [ ] Kegagalan persistence menghasilkan audit `FAILED` dan mencoba rollback.
 - [ ] Player quit menghapus cooldown state tanpa mempengaruhi stock/saldo.
@@ -139,4 +171,4 @@ Target build saat ini: `0.1.0-beta.1-RC1`.
 
 ## Exit Criteria beta.1
 
-`beta.1` baru dianggap lulus jika jalur BUY/SELL utama, NPC-only proximity guard, persistence/recovery stock, config validation, audit trail, clean shutdown, dan skenario anti-dupe di atas lolos di server uji. Fitur governance, admin GUI, dynamic pricing, dan market event tetap di luar scope beta.1.
+`beta.1` baru dianggap lulus jika jalur BUY/SELL utama, safe runtime reload, NPC-only proximity guard, persistence/recovery stock, config validation, audit trail, clean shutdown, dan skenario anti-dupe di atas lolos di server uji. Fitur governance, admin GUI, dynamic pricing, dan market event tetap di luar scope beta.1.
