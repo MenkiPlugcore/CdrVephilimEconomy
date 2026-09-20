@@ -11,6 +11,7 @@ import id.cdr.vephilimeconomy.gui.ShopGuiListener;
 import id.cdr.vephilimeconomy.gui.ShopGuiService;
 import id.cdr.vephilimeconomy.gui.ShopInventoryHolder;
 import id.cdr.vephilimeconomy.npc.CitizensNpcListener;
+import id.cdr.vephilimeconomy.pricing.DynamicPricingService;
 import id.cdr.vephilimeconomy.shop.Shop;
 import id.cdr.vephilimeconomy.shop.ShopListing;
 import id.cdr.vephilimeconomy.shop.ShopRegistry;
@@ -19,6 +20,7 @@ import id.cdr.vephilimeconomy.transaction.PendingTransactionJournal;
 import id.cdr.vephilimeconomy.transaction.PlayerTransactionStateListener;
 import id.cdr.vephilimeconomy.transaction.RuntimeSafetyState;
 import id.cdr.vephilimeconomy.transaction.TransactionService;
+import id.cdr.vephilimeconomy.transaction.TransactionType;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.configuration.ConfigurationSection;
@@ -43,6 +45,7 @@ public final class CdrVephilimEconomy extends JavaPlugin {
     private EconomyBridge economy;
     private ShopRegistry shopRegistry;
     private StockRepository stockRepository;
+    private DynamicPricingService dynamicPricingService;
     private AuditService auditService;
     private AdminAuditService adminAuditService;
     private ShopAdminService shopAdminService;
@@ -56,6 +59,7 @@ public final class CdrVephilimEconomy extends JavaPlugin {
     public void onEnable() {
         saveDefaultConfig();
         ensureResource("shops.yml");
+        ensureResource("pricing.yml");
 
         safetyState = new RuntimeSafetyState(getDataFolder(), getLogger());
         safetyState.load();
@@ -161,6 +165,7 @@ public final class CdrVephilimEconomy extends JavaPlugin {
 
         shopAdminService = null;
         adminAuditService = null;
+        dynamicPricingService = null;
         shopRegistry = null;
         guiService = null;
         economy = null;
@@ -191,6 +196,14 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                     + ". Runtime lama tetap aktif.");
         }
 
+        DynamicPricingService newPricing;
+        try {
+            newPricing = loadPricing(candidate);
+        } catch (IOException exception) {
+            return new ReloadResult(false, "pricing.yml tidak valid: " + exception.getMessage()
+                    + ". Runtime lama tetap aktif.");
+        }
+
         AuditService newAudit;
         try {
             newAudit = createAuditService(candidateSettings);
@@ -198,8 +211,8 @@ public final class CdrVephilimEconomy extends JavaPlugin {
             return new ReloadResult(false, "Audit service baru gagal dibuka: " + exception.getMessage());
         }
 
-        TransactionService newTransactions = createTransactionService(newAudit, candidateSettings);
-        ShopGuiService newGui = new ShopGuiService(stockRepository, economy, candidateSettings.bulkAmount());
+        TransactionService newTransactions = createTransactionService(newAudit, candidateSettings, newPricing);
+        ShopGuiService newGui = new ShopGuiService(this, stockRepository, economy, newPricing, candidateSettings.bulkAmount());
         CitizensNpcListener newCitizensListener = new CitizensNpcListener(this, candidate, newGui, safetyState);
         ShopGuiListener newGuiListener = new ShopGuiListener(
                 this,
@@ -242,6 +255,7 @@ public final class CdrVephilimEconomy extends JavaPlugin {
         }
 
         shopRegistry = candidate;
+        dynamicPricingService = newPricing;
         auditService = newAudit;
         transactionService = newTransactions;
         guiService = newGui;
@@ -252,8 +266,9 @@ public final class CdrVephilimEconomy extends JavaPlugin {
         reloadConfig();
         logDiagnostics("Reload");
 
-        String warningSuffix = candidate.configurationWarningCount() > 0
-                ? " Ada " + candidate.configurationWarningCount() + " warning konfigurasi; cek console."
+        int totalWarnings = candidate.configurationWarningCount() + newPricing.configurationWarningCount();
+        String warningSuffix = totalWarnings > 0
+                ? " Ada " + totalWarnings + " warning konfigurasi; cek console."
                 : "";
         String safetySuffix = safetyState.isStopped()
                 ? " ECONOMY SAFETY STOP masih aktif; reload tidak mereset safety lock."
@@ -272,6 +287,10 @@ public final class CdrVephilimEconomy extends JavaPlugin {
 
     public AdminAuditService adminAuditService() {
         return adminAuditService;
+    }
+
+    public DynamicPricingService dynamicPricingService() {
+        return dynamicPricingService;
     }
 
     public boolean isEconomySafetyStopped() {
@@ -337,10 +356,22 @@ public final class CdrVephilimEconomy extends JavaPlugin {
         lines.add("§7Listings:");
         for (ShopListing listing : shop.listings().values()) {
             int stock = stockRepository == null ? -1 : stockRepository.getStock(shop.id(), listing.id());
+            String buyDisplay = Double.toString(listing.buyPrice());
+            String sellDisplay = Double.toString(listing.sellPrice());
+            String dynamic = "";
+            if (dynamicPricingService != null && dynamicPricingService.isDynamic(shop.id(), listing.id())) {
+                DynamicPricingService.PriceQuote buy = dynamicPricingService.quote(
+                        shop, listing, stock, TransactionType.BUY);
+                DynamicPricingService.PriceQuote sell = dynamicPricingService.quote(
+                        shop, listing, stock, TransactionType.SELL);
+                buyDisplay += "→" + buy.effectivePrice();
+                sellDisplay += "→" + sell.effectivePrice();
+                dynamic = " dynamic=x" + buy.multiplier();
+            }
             lines.add("§f- " + listing.id() + " §7" + listing.material().name()
                     + " slot=" + listing.slot() + " mode=" + listing.mode()
-                    + " buy=" + listing.buyPrice() + " sell=" + listing.sellPrice()
-                    + " stock=" + stock + "/" + listing.maxStock());
+                    + " buy=" + buyDisplay + " sell=" + sellDisplay
+                    + " stock=" + stock + "/" + listing.maxStock() + dynamic);
         }
         return lines;
     }
@@ -350,12 +381,14 @@ public final class CdrVephilimEconomy extends JavaPlugin {
             return "runtime belum siap";
         }
         PendingTransactionJournal.ScanResult pending = pendingJournal.scanPending();
+        String pricingStatus = dynamicPricingService == null ? "UNAVAILABLE" : dynamicPricingService.shortStatus();
         String summary = "version=" + getDescription().getVersion()
                 + ", shops=" + shopRegistry.shopCount()
                 + ", enabled=" + shopRegistry.enabledShopCount()
                 + ", npcBindings=" + shopRegistry.activeBindingCount()
                 + ", listings=" + shopRegistry.listingCount()
                 + ", stockEntries=" + stockRepository.entryCount()
+                + ", pricing=" + pricingStatus
                 + ", pendingTx=" + pending.total()
                 + ", configWarnings=" + shopRegistry.configurationWarningCount()
                 + ", safety=" + safetyState.shortStatus();
@@ -365,6 +398,14 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                     + ", reason=" + compactReason(safetyState.reason());
         }
         return summary;
+    }
+
+    public String pricingStatusSummary() {
+        if (dynamicPricingService == null) {
+            return "pricing runtime belum siap";
+        }
+        return "pricing=" + dynamicPricingService.shortStatus()
+                + ", warnings=" + dynamicPricingService.configurationWarningCount();
     }
 
     public String safetyStatusSummary() {
@@ -415,9 +456,10 @@ public final class CdrVephilimEconomy extends JavaPlugin {
     }
 
     private void installRuntime(ShopRegistry registry, RuntimeSettings settings) throws IOException {
+        DynamicPricingService newPricing = loadPricing(registry);
         AuditService newAudit = createAuditService(settings);
-        TransactionService newTransactions = createTransactionService(newAudit, settings);
-        ShopGuiService newGui = new ShopGuiService(stockRepository, economy, settings.bulkAmount());
+        TransactionService newTransactions = createTransactionService(newAudit, settings, newPricing);
+        ShopGuiService newGui = new ShopGuiService(this, stockRepository, economy, newPricing, settings.bulkAmount());
         CitizensNpcListener newCitizensListener = new CitizensNpcListener(this, registry, newGui, safetyState);
         ShopGuiListener newGuiListener = new ShopGuiListener(
                 this,
@@ -435,12 +477,23 @@ public final class CdrVephilimEconomy extends JavaPlugin {
         getServer().getPluginManager().registerEvents(newStateListener, this);
 
         shopRegistry = registry;
+        dynamicPricingService = newPricing;
         auditService = newAudit;
         transactionService = newTransactions;
         guiService = newGui;
         citizensNpcListener = newCitizensListener;
         shopGuiListener = newGuiListener;
         transactionStateListener = newStateListener;
+    }
+
+    private DynamicPricingService loadPricing(ShopRegistry registry) throws IOException {
+        DynamicPricingService service = new DynamicPricingService(new File(getDataFolder(), "pricing.yml"), getLogger());
+        try {
+            service.load(registry);
+        } catch (IllegalArgumentException exception) {
+            throw new IOException("pricing policy validation failed: " + exception.getMessage(), exception);
+        }
+        return service;
     }
 
     private AuditService createAuditService(RuntimeSettings settings) throws IOException {
@@ -453,7 +506,8 @@ public final class CdrVephilimEconomy extends JavaPlugin {
         );
     }
 
-    private TransactionService createTransactionService(AuditService audit, RuntimeSettings settings) {
+    private TransactionService createTransactionService(AuditService audit, RuntimeSettings settings,
+                                                        DynamicPricingService pricing) {
         return new TransactionService(
                 economy,
                 stockRepository,
@@ -461,6 +515,7 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                 getLogger(),
                 safetyState,
                 pendingJournal,
+                pricing,
                 this::closeOpenShopInventories,
                 settings.cooldownMillis(),
                 settings.maxAmount(),
@@ -511,12 +566,13 @@ public final class CdrVephilimEconomy extends JavaPlugin {
         RuntimeSettings settings = readSettings();
         PendingTransactionJournal.ScanResult pending = pendingJournal.scanPending();
         getLogger().info("CdrVephilimEconomy " + getDescription().getVersion()
-                + " " + phase.toLowerCase() + ": NPC-only shop, static pricing, persistent stock, guarded transactions, audit.");
+                + " " + phase.toLowerCase() + ": NPC-only shop, controlled pricing, persistent stock, guarded transactions, audit.");
         getLogger().info(phase + " diagnostics: shops=" + shopRegistry.shopCount()
                 + ", enabled=" + shopRegistry.enabledShopCount()
                 + ", npcBindings=" + shopRegistry.activeBindingCount()
                 + ", listings=" + shopRegistry.listingCount()
                 + ", stockEntries=" + stockRepository.entryCount()
+                + ", pricing=" + (dynamicPricingService == null ? "UNAVAILABLE" : dynamicPricingService.shortStatus())
                 + ", pendingTx=" + pending.total()
                 + ", rejectedDefinitions=" + shopRegistry.rejectedDefinitionCount()
                 + ", configWarnings=" + shopRegistry.configurationWarningCount()
