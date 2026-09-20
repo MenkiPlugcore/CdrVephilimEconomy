@@ -11,6 +11,7 @@ import id.cdr.vephilimeconomy.gui.ShopInventoryHolder;
 import id.cdr.vephilimeconomy.npc.CitizensNpcListener;
 import id.cdr.vephilimeconomy.shop.ShopRegistry;
 import id.cdr.vephilimeconomy.storage.StockRepository;
+import id.cdr.vephilimeconomy.transaction.PendingTransactionJournal;
 import id.cdr.vephilimeconomy.transaction.PlayerTransactionStateListener;
 import id.cdr.vephilimeconomy.transaction.RuntimeSafetyState;
 import id.cdr.vephilimeconomy.transaction.TransactionService;
@@ -29,6 +30,7 @@ import java.io.IOException;
 
 public final class CdrVephilimEconomy extends JavaPlugin {
     private RuntimeSafetyState safetyState;
+    private PendingTransactionJournal pendingJournal;
     private EconomyBridge economy;
     private ShopRegistry shopRegistry;
     private StockRepository stockRepository;
@@ -46,6 +48,18 @@ public final class CdrVephilimEconomy extends JavaPlugin {
 
         safetyState = new RuntimeSafetyState(getDataFolder(), getLogger());
         safetyState.load();
+
+        pendingJournal = new PendingTransactionJournal(getDataFolder(), getLogger());
+        PendingTransactionJournal.ScanResult startupPending = pendingJournal.scanPending();
+        if (startupPending.total() > 0) {
+            String reason = "PENDING_TRANSACTION_RECOVERY_REQUIRED: " + startupPending.summary();
+            if (!safetyState.isStopped()) {
+                safetyState.trip(startupPending.firstTransactionId(), reason);
+            }
+            getLogger().severe("Ditemukan pending transaction journal setelah startup/crash. "
+                    + "Ekonomi dikunci sampai rekonsiliasi manual dan /cve safety unlock CONFIRM. "
+                    + startupPending.summary());
+        }
 
         economy = setupEconomy();
         if (economy == null) {
@@ -137,7 +151,7 @@ public final class CdrVephilimEconomy extends JavaPlugin {
     }
 
     public synchronized ReloadResult reloadRuntime() {
-        if (!isEnabled() || stockRepository == null || economy == null || safetyState == null) {
+        if (!isEnabled() || stockRepository == null || economy == null || safetyState == null || pendingJournal == null) {
             return new ReloadResult(false, "Plugin belum berada pada runtime state yang dapat direload.");
         }
 
@@ -232,19 +246,22 @@ public final class CdrVephilimEconomy extends JavaPlugin {
     }
 
     public DoctorService.Report runDoctor() {
-        return new DoctorService(this, shopRegistry, stockRepository, auditService, safetyState, economy).run();
+        return new DoctorService(this, shopRegistry, stockRepository, auditService,
+                safetyState, pendingJournal, economy).run();
     }
 
     public String statusSummary() {
-        if (shopRegistry == null || stockRepository == null || safetyState == null) {
+        if (shopRegistry == null || stockRepository == null || safetyState == null || pendingJournal == null) {
             return "runtime belum siap";
         }
+        PendingTransactionJournal.ScanResult pending = pendingJournal.scanPending();
         String summary = "version=" + getDescription().getVersion()
                 + ", shops=" + shopRegistry.shopCount()
                 + ", enabled=" + shopRegistry.enabledShopCount()
                 + ", npcBindings=" + shopRegistry.activeBindingCount()
                 + ", listings=" + shopRegistry.listingCount()
                 + ", stockEntries=" + stockRepository.entryCount()
+                + ", pendingTx=" + pending.total()
                 + ", configWarnings=" + shopRegistry.configurationWarningCount()
                 + ", safety=" + safetyState.shortStatus();
         if (safetyState.isStopped()) {
@@ -256,21 +273,23 @@ public final class CdrVephilimEconomy extends JavaPlugin {
     }
 
     public String safetyStatusSummary() {
-        if (safetyState == null) {
+        if (safetyState == null || pendingJournal == null) {
             return "safety runtime belum siap";
         }
+        PendingTransactionJournal.ScanResult pending = pendingJournal.scanPending();
         if (!safetyState.isStopped()) {
-            return "safety=OK, persistentLock=false";
+            return "safety=OK, persistentLock=false, pendingTx=" + pending.total();
         }
         return "safety=" + safetyState.shortStatus()
                 + ", persisted=" + safetyState.persistenceHealthy()
+                + ", pendingTx=" + pending.total()
                 + ", tx=" + (safetyState.transactionId() == null ? "unknown" : safetyState.transactionId())
                 + ", stoppedAt=" + safetyState.stoppedAt()
                 + ", reason=" + compactReason(safetyState.reason());
     }
 
     public synchronized ReloadResult unlockSafety(String actor) {
-        if (safetyState == null || stockRepository == null) {
+        if (safetyState == null || stockRepository == null || pendingJournal == null) {
             return new ReloadResult(false, "Safety/storage runtime belum siap.");
         }
         if (!safetyState.isStopped()) {
@@ -284,14 +303,20 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                     + exception.getMessage());
         }
 
+        PendingTransactionJournal.ArchiveResult archive = pendingJournal.archiveAll(actor);
+        if (!archive.success()) {
+            return new ReloadResult(false, archive.message());
+        }
+
         RuntimeSafetyState.UnlockResult unlock = safetyState.unlock(actor);
         if (!unlock.success()) {
             return new ReloadResult(false, unlock.message());
         }
 
         getLogger().warning("Safety recovery selesai oleh " + actor
-                + ". Runtime transaksi dibuka kembali tanpa menghapus safety-history.log.");
-        return new ReloadResult(true, unlock.message());
+                + ". Pending evidence archived=" + archive.archived()
+                + "; runtime transaksi dibuka kembali tanpa menghapus recovery history.");
+        return new ReloadResult(true, unlock.message() + " " + archive.message());
     }
 
     private void installRuntime(ShopRegistry registry, RuntimeSettings settings) throws IOException {
@@ -340,6 +365,7 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                 audit,
                 getLogger(),
                 safetyState,
+                pendingJournal,
                 this::closeOpenShopInventories,
                 settings.cooldownMillis(),
                 settings.maxAmount(),
@@ -384,10 +410,11 @@ public final class CdrVephilimEconomy extends JavaPlugin {
     }
 
     private void logDiagnostics(String phase) {
-        if (shopRegistry == null || stockRepository == null || safetyState == null) {
+        if (shopRegistry == null || stockRepository == null || safetyState == null || pendingJournal == null) {
             return;
         }
         RuntimeSettings settings = readSettings();
+        PendingTransactionJournal.ScanResult pending = pendingJournal.scanPending();
         getLogger().info("CdrVephilimEconomy " + getDescription().getVersion()
                 + " " + phase.toLowerCase() + ": NPC-only shop, static pricing, persistent stock, guarded transactions, audit.");
         getLogger().info(phase + " diagnostics: shops=" + shopRegistry.shopCount()
@@ -395,6 +422,7 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                 + ", npcBindings=" + shopRegistry.activeBindingCount()
                 + ", listings=" + shopRegistry.listingCount()
                 + ", stockEntries=" + stockRepository.entryCount()
+                + ", pendingTx=" + pending.total()
                 + ", rejectedDefinitions=" + shopRegistry.rejectedDefinitionCount()
                 + ", configWarnings=" + shopRegistry.configurationWarningCount()
                 + ", safety=" + safetyState.shortStatus() + ".");
@@ -404,6 +432,9 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                 + ", busyRejected=" + settings.auditBusyRejected()
                 + ", discordIncludeRejected=" + settings.discordIncludeRejected() + ".");
 
+        if (pending.total() > 0) {
+            getLogger().severe("Pending transaction recovery required: " + pending.summary());
+        }
         if (safetyState.isStopped()) {
             getLogger().severe("Economy safety stop aktif dan persisten: tx="
                     + (safetyState.transactionId() == null ? "unknown" : safetyState.transactionId())
