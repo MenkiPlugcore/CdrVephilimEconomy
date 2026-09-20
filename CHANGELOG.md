@@ -11,6 +11,38 @@ Format mengikuti prinsip Keep a Changelog dan versioning proyek akan menggunakan
 - Roadmap development awal.
 - Konsep NPC-only economy untuk Vephilim Roleplay.
 
+## [0.1.0-beta.1-RC7]
+
+### Added
+- Persistent write-ahead transaction journal di `pending-transactions/` untuk setiap BUY/SELL yang sudah lolos validasi dan akan mulai memutasi uang/item.
+- Journal menyimpan transaction ID, player, shop/listing, tipe, amount, harga, intended total, stock awal, timestamp, dan stage transaksi.
+- Stage journal mencakup `PREPARED`, `MONEY_WITHDRAWN`, `ITEM_ADDED`, `ITEM_REMOVED`, `MONEY_DEPOSITED`, dan `STOCK_PERSISTED` untuk membantu rekonsiliasi setelah crash.
+- Startup recovery scan otomatis: pending transaction yang tersisa setelah crash/restart memicu persistent safety stop sebelum shop dapat dipakai.
+- Pending evidence yang sudah direkonsiliasi admin diarsipkan ke `transaction-recovery/` dan dicatat di `transaction-recovery.log` saat `/cve safety unlock CONFIRM` berhasil.
+- `/cve status`, `/cve safety status`, dan `/cve doctor` sekarang menampilkan/memeriksa jumlah pending transaction evidence.
+- Per-player in-flight transaction guard untuk menolak re-entrant/overlapping transaction pada player yang sama.
+- Guard yang menolak transaction execution dari thread async agar Bukkit inventory/Vault mutation tidak berjalan di luar main thread.
+
+### Changed
+- BUY/SELL sekarang membuat journal durable sebelum mutation pertama dan menghapus journal hanya setelah stock persistence selesai.
+- Jika server mati pada window antara money/item mutation dan stock commit, restart tidak menganggap transaksi selesai/bersih; ekonomi masuk fail-closed sampai admin rekonsiliasi.
+- Inventory helper sekarang mengambil snapshot storage dan mengembalikan snapshot jika add/remove internal gagal di tengah operasi, sehingga partial inventory mutation tidak dibiarkan sebagai hasil setengah jadi.
+- Semua inventory drag diblokir selama GUI shop terbuka, termasuk drag yang hanya menyentuh inventory player, untuk menghilangkan race aneh saat GUI refresh/transaksi.
+- Safety unlock sekarang mengarsipkan pending transaction evidence sebelum persistent safety lock boleh dibuka.
+- Doctor menandai pending transaction journal sebagai `FAIL`; pending evidence tanpa safety stop juga dianggap failure korelasi.
+- Artifact/version candidate dinaikkan menjadi `0.1.0-beta.1-RC7`.
+
+### Security / Safety
+- Hard-crash window antara withdraw/deposit, inventory mutation, dan stock persistence sekarang meninggalkan durable recovery evidence.
+- Journal write/stage/finalization failure memicu safety stop daripada membiarkan transaksi berikutnya berjalan dengan state yang tidak dapat dibuktikan konsisten.
+- Successful transaction tidak meninggalkan pending journal; stale pending journal selalu diperlakukan sebagai kondisi yang memerlukan investigasi.
+- Recovery tidak menghapus bukti transaksi; evidence dipindahkan ke arsip recovery sebelum ekonomi dibuka kembali.
+- Re-entrant transaction dan transaction async ditolak sebelum mutation bisnis dijalankan.
+
+### Status
+- `0.1.0-beta.1-RC7` menggantikan RC6 sebagai kandidat regression/anti-dupe terakhir sebelum `beta.1` final.
+- BUY/SELL satuan dan bulk tetap tercatat lolos pengujian awal user; fokus QA RC7 adalah crash-window journal, spam/re-entrant guard, persistence/restart, dan final regression.
+
 ## [0.1.0-beta.1-RC6]
 
 ### Added
