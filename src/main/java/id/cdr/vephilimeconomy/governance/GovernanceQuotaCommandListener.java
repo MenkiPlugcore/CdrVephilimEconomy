@@ -94,7 +94,10 @@ public final class GovernanceQuotaCommandListener implements Listener {
         String action = tokens[2].toLowerCase(Locale.ROOT);
         switch (action) {
             case "status" -> {
-                if (!canViewAny(sender)) return pricingDenied(sender, "view");
+                if (!canViewAny(sender)) {
+                    pricingDenied(sender, "view");
+                    return;
+                }
                 sender.sendMessage("§6[CVE Pricing] §f" + pricingAdmin.status());
             }
             case "show" -> {
@@ -103,7 +106,10 @@ public final class GovernanceQuotaCommandListener implements Listener {
                     return;
                 }
                 String shopId = normalize(tokens[3]);
-                if (!canViewShop(sender, shopId)) return pricingDenied(sender, "view " + shopId);
+                if (!canViewShop(sender, shopId)) {
+                    pricingDenied(sender, "view " + shopId);
+                    return;
+                }
                 pricingAdmin.show(shopId, tokens[4]).forEach(sender::sendMessage);
             }
             case "stats" -> handleStats(sender, tokens);
@@ -128,9 +134,13 @@ public final class GovernanceQuotaCommandListener implements Listener {
         }
 
         if (shopId.isBlank()) {
-            if (!canViewAny(sender)) return pricingDenied(sender, "stats global");
+            if (!canViewAny(sender)) {
+                pricingDenied(sender, "stats global");
+                return;
+            }
         } else if (!canViewShop(sender, shopId)) {
-            return pricingDenied(sender, "stats " + shopId);
+            pricingDenied(sender, "stats " + shopId);
+            return;
         }
 
         try {
@@ -152,7 +162,10 @@ public final class GovernanceQuotaCommandListener implements Listener {
         String value = tokens[6];
 
         MutationAccess access = mutationAccess(sender, shopId);
-        if (!access.allowed()) return pricingDenied(sender, "mutate " + shopId);
+        if (!access.allowed()) {
+            pricingDenied(sender, "mutate " + shopId);
+            return;
+        }
 
         if (!access.unrestricted() && !managerPolicyGuard(shopId, listingId, field, value)) {
             sender.sendMessage("§c[CVE Pricing] Perubahan melewati guardrail ECONOMY_MANAGER. "
@@ -169,7 +182,10 @@ public final class GovernanceQuotaCommandListener implements Listener {
             sender.sendMessage("§eUsage: /cve pricing global <on|off>");
             return;
         }
-        if (!canManageGlobal(sender)) return pricingDenied(sender, "global mutation");
+        if (!canManageGlobal(sender)) {
+            pricingDenied(sender, "global mutation");
+            return;
+        }
         Boolean enabled = PricingAdminService.parseBoolean(tokens[3]);
         if (enabled == null) {
             sender.sendMessage("§c[CVE Pricing] Nilai harus on/off atau true/false.");
@@ -183,7 +199,10 @@ public final class GovernanceQuotaCommandListener implements Listener {
             sender.sendMessage("§eUsage: /cve pricing stability <quote-cooldown|min-stock-change|reversal-cooldown> <value>");
             return;
         }
-        if (!canManageGlobal(sender)) return pricingDenied(sender, "stability mutation");
+        if (!canManageGlobal(sender)) {
+            pricingDenied(sender, "stability mutation");
+            return;
+        }
         Integer value = parseInt(tokens[4]);
         if (value == null) {
             sender.sendMessage("§c[CVE Pricing] Nilai stability harus integer.");
@@ -364,7 +383,7 @@ public final class GovernanceQuotaCommandListener implements Listener {
             return;
         }
         Integer amount = parseInt(tokens[6]);
-        if (amount == null || amount < 0 || amount == 0) return;
+        if (amount == null || amount <= 0) return;
 
         if (operation == ShopAdminService.StockOperation.SET) return;
         long directLimit = assignment.role() == GovernanceRole.ECONOMY_STAFF
