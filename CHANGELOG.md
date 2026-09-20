@@ -11,6 +11,32 @@ Format mengikuti prinsip Keep a Changelog dan versioning proyek akan menggunakan
 - Roadmap development awal.
 - Konsep NPC-only economy untuk Vephilim Roleplay.
 
+## [0.1.0-beta.1-RC2]
+
+### Added
+- Command admin `/cve reload` untuk reload runtime tanpa restart server.
+- Command admin `/cve status` untuk melihat ringkasan version, shop, NPC binding, listing, dan stock entry.
+- Alias `/veconomy` untuk command admin.
+- Runtime stock reconcile yang mempertahankan stock listing existing, menginisialisasi listing baru dari `initial-stock`, menghapus entry listing yang sudah dihapus, dan clamp stock jika `max-stock` diperkecil.
+- Strict YAML loading untuk `shops.yml` agar syntax error tidak berubah menjadi registry kosong secara diam-diam.
+
+### Changed
+- Reload runtime membangun registry, transaction service, GUI service, audit service, dan listener baru lalu mengganti runtime lama tanpa restart server.
+- Semua GUI shop aktif ditutup saat reload agar holder/listing lama tidak dapat dipakai setelah konfigurasi berubah.
+- `config.yml` ikut direload sehingga cooldown, bulk amount, max amount, NPC distance, audit policy, Discord webhook, serta messages dapat diperbarui tanpa restart.
+- Reload ditolak bila `shops.yml` invalid atau memiliki rejected definition; runtime lama tetap aktif.
+- Artifact/version candidate dinaikkan menjadi `0.1.0-beta.1-RC2`.
+
+### Security / Safety
+- `/cve reload` hanya dapat dipakai oleh `cdrvephilimeconomy.admin`.
+- Stock reconcile bersifat rollback-on-persist-failure; jika snapshot baru gagal ditulis, stock runtime lama dipulihkan.
+- Runtime reload tidak mengandalkan `/reload`, PlugMan, atau plugin hot-unload pihak ketiga.
+- Reload dengan konfigurasi shop invalid tidak mengganti binding NPC aktif yang sebelumnya sehat.
+
+### Status
+- `0.1.0-beta.1-RC2` menggantikan RC1 sebagai kandidat runtime QA.
+- Runtime QA tetap wajib sebelum `beta.1` ditandai final.
+
 ## [0.1.0-beta.1-RC1]
 
 ### Added
