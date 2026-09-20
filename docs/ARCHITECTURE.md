@@ -1,190 +1,292 @@
 # Architecture — CdrVephilimEconomy
 
+Dokumen ini merefleksikan arsitektur aktual **`0.1.0-beta.1` FINAL**.
+
 ## Design Goals
 
-- Ringan untuk server Paper.
+- Ringan untuk Paper 1.21.11 / Java 21.
+- NPC-only player flow.
 - Tidak melakukan kalkulasi ekonomi setiap tick.
-- Aman terhadap dupe dan race condition.
-- Shop dapat ditambah tanpa recompiling plugin.
-- Integrasi eksternal dibuat modular.
-- Player-facing flow tetap NPC-only.
+- Aman terhadap dupe, race condition, crash window, dan silent stock reset.
+- Shop dapat diubah dari konfigurasi tanpa recompiling plugin.
+- Perubahan config dapat diterapkan dengan safe runtime reload.
+- Failure kritis memilih fail-closed daripada melanjutkan ekonomi dengan state yang tidak dapat dipercaya.
 
 ## High-Level Components
 
 ### NPC Integration
 
-Tanggung jawab:
-- mendeteksi interaksi player dengan NPC;
-- mencocokkan Citizens NPC ID dengan shop ID;
-- membuka shop yang sesuai.
+Citizens menjadi representasi NPC dan entry point interaksi player.
 
-Citizens hanya menjadi representasi NPC. Citizens tidak menjadi sumber kebenaran transaksi.
+Tanggung jawab:
+- mendeteksi interaksi player dengan Citizens NPC;
+- mencocokkan NPC ID dengan shop aktif;
+- memblokir akses saat persistent safety stop aktif;
+- membuka GUI shop yang sesuai.
+
+Citizens **bukan** sumber kebenaran transaksi.
 
 ### Shop Registry
 
-Menyimpan definisi shop:
+`ShopRegistry` memuat dan memvalidasi `shops.yml`.
+
+Menyimpan:
 - shop ID;
 - display name;
-- NPC binding;
-- daftar listing;
+- Citizens NPC binding;
 - status enabled/disabled;
-- metadata pengelola.
+- listing dan slot GUI;
+- mode BUY / SELL / BUY_SELL;
+- harga BUY/SELL;
+- initial stock dan max stock.
 
-### Listing Service
+Definisi invalid, duplicate slot, duplicate NPC binding, material invalid, harga invalid, atau bounds stock invalid ditolak secara fail-closed.
 
-Menyimpan aturan item:
-- item identity;
-- BUY/SELL mode;
-- buy price;
-- sell price;
-- stock;
-- max stock;
-- enabled state.
+### GUI Layer
+
+GUI menggunakan custom inventory holder dan hanya menjadi presentation/controller tipis.
+
+Tanggung jawab:
+- render saldo, stock, harga, bulk amount, sold-out/full state;
+- cancel inventory mutation yang tidak diizinkan;
+- mapping slot server-side ke listing;
+- memverifikasi ulang jarak dan binding NPC sebelum transaksi;
+- meneruskan request ke `TransactionService`.
+
+Logika mutation bisnis tidak ditempatkan di GUI listener.
 
 ### Transaction Service
 
 Komponen paling kritis.
 
 Tanggung jawab:
-- validasi request;
-- validasi saldo;
-- validasi inventory;
-- validasi stok;
-- lock listing bila diperlukan;
-- melakukan mutation economy + inventory + stock;
-- rollback saat terjadi kegagalan;
-- menghasilkan transaction result;
-- mengirim event audit.
-
-Tidak boleh ada logika transaksi kritis di GUI listener.
+- validasi amount dan mode transaksi;
+- cooldown player;
+- per-player in-flight guard;
+- listing-level lock;
+- menolak eksekusi transaksi dari thread async;
+- validasi balance, inventory, stock, dan max stock;
+- write-ahead transaction journal;
+- mutation Vault/inventory;
+- persistence stock;
+- compensation rollback;
+- trip persistent safety stop ketika state tidak lagi dapat dibuktikan konsisten;
+- local/Discord audit.
 
 ### Economy Bridge
 
-Abstraksi untuk Vault/economy provider.
+`EconomyBridge` mengabstraksikan Vault provider.
 
 Tanggung jawab:
-- get balance;
+- balance check;
 - withdraw;
 - deposit;
-- normalisasi hasil operasi economy.
+- currency formatting;
+- normalisasi hasil operasi provider.
 
-### Storage
+### Stock Storage
 
-Fase awal dapat menggunakan SQLite untuk data runtime seperti stok dan audit lokal.
+Beta.1 **tidak menggunakan SQLite**. Mutable stock disimpan secara terpisah dari shop config menggunakan YAML persistence yang dijaga ketat.
 
-Konfigurasi definisi shop dapat menggunakan YAML agar mudah diedit, sementara data mutable seperti stok disimpan terpisah agar aman dari reload konfigurasi.
+File utama:
+
+```text
+stock.yml
+stock.yml.bak
+stock.yml.tmp
+stock.yml.initialized
+```
+
+Mekanisme:
+- in-memory stock map untuk runtime;
+- write temporary snapshot;
+- strict parse + verification;
+- atomic replace bila filesystem mendukung;
+- backup snapshot;
+- recovery dari backup/temp pada startup;
+- `stock.yml.initialized` mencegah seluruh snapshot yang hilang dianggap sebagai first boot baru;
+- corrupt/untrusted storage dapat menyebabkan startup fail-closed.
+
+### Write-Ahead Transaction Journal
+
+Setiap BUY/SELL yang sudah melewati validasi dan akan mulai mutation membuat journal durable di:
+
+```text
+pending-transactions/
+```
+
+Stage yang dicatat antara lain:
+
+```text
+PREPARED
+MONEY_WITHDRAWN
+ITEM_ADDED
+ITEM_REMOVED
+MONEY_DEPOSITED
+STOCK_PERSISTED
+```
+
+Tujuan journal bukan untuk auto-replay transaksi, melainkan menyediakan evidence yang cukup untuk mendeteksi transaksi yang terputus oleh hard crash.
+
+Jika pending journal ditemukan pada startup, ekonomi masuk safety stop. Admin harus melakukan rekonsiliasi dan recovery eksplisit. Evidence kemudian diarsipkan ke `transaction-recovery/` dan `transaction-recovery.log`.
+
+### Runtime Safety State
+
+Persistent circuit breaker memakai:
+
+```text
+safety.lock
+safety.lock.tmp
+safety.lock.last
+safety-history.log
+```
+
+Safety stop dapat dipicu oleh kegagalan persistence, kegagalan rollback/compensation kritis, journal failure, atau pending transaction setelah crash.
+
+Restart server dan `/cve reload` tidak menghapus safety stop.
+
+Recovery hanya dilakukan secara eksplisit:
+
+```text
+/cve safety unlock CONFIRM
+```
+
+Recovery tetap ditolak jika stock snapshot tidak dapat di-flush dengan sehat.
+
+### Inventory Mutation Safety
+
+BUY/SELL beta.1 hanya memperlakukan item vanilla polos sebagai item yang dapat dijual untuk listing material biasa.
+
+Inventory helper:
+- mengecek capacity sebelum BUY;
+- menghitung item polos sebelum SELL;
+- menyimpan snapshot storage sebelum add/remove;
+- mengembalikan snapshot jika operasi helper gagal setengah jalan.
 
 ### Audit Service
 
-Dua target:
-- local/database audit;
-- Discord webhook async.
+Target audit:
+- `logs/audit.log` lokal;
+- Discord webhook async opsional.
 
-Discord tidak boleh berada di jalur blocking transaksi utama.
+Audit mencatat transaction ID, player, shop/listing, type, amount, unit price, intended total, stock before/after, status, dan detail failure.
 
-### Permission Service
+Discord tidak berada di jalur blocking transaksi utama dan kegagalan Discord tidak boleh menggagalkan transaksi.
 
-Menggunakan permission nodes dan kompatibel dengan LuckPerms.
+### Doctor Diagnostics
 
-Player biasa tidak mendapatkan command shop.
+`/cve doctor` melakukan health inspection non-destruktif terhadap:
+- runtime services;
+- Citizens;
+- Vault/provider;
+- config dan shop definitions;
+- runtime-vs-disk;
+- NPC bindings;
+- stock main/backup/marker/temp;
+- filesystem writability;
+- audit state;
+- safety state;
+- pending transaction evidence.
 
-## Suggested Package Layout
+Doctor tidak memperbaiki stock atau membuka safety lock secara otomatis.
 
-```text
-id.cdr.vephilimeconomy
-├── CdrVephilimEconomy.java
-├── npc/
-│   ├── NpcIntegration.java
-│   └── CitizensNpcIntegration.java
-├── shop/
-│   ├── Shop.java
-│   ├── ShopListing.java
-│   ├── ShopRegistry.java
-│   └── ShopService.java
-├── transaction/
-│   ├── TransactionService.java
-│   ├── TransactionRequest.java
-│   ├── TransactionResult.java
-│   └── TransactionType.java
-├── economy/
-│   ├── EconomyBridge.java
-│   └── VaultEconomyBridge.java
-├── storage/
-│   ├── Storage.java
-│   ├── SqliteStorage.java
-│   └── repository/
-├── audit/
-│   ├── AuditService.java
-│   ├── LocalAuditSink.java
-│   └── DiscordAuditSink.java
-├── gui/
-│   ├── ShopGui.java
-│   └── ShopGuiListener.java
-├── permission/
-├── config/
-└── util/
-```
+## Transaction Safety Flow
 
-Nama package final dapat disesuaikan saat bootstrap project.
-
-## Transaction Safety
-
-Urutan BUY ideal:
+BUY simplified:
 
 ```text
-validate NPC/shop/listing
+validate request
       ↓
-acquire listing lock
+per-player in-flight guard
       ↓
-re-read current stock
+listing lock
       ↓
-check balance
+recheck safety + stock + balance + inventory
       ↓
-check inventory capacity
+write PREPARED journal
       ↓
 withdraw money
       ↓
+update journal stage
+      ↓
 give item
       ↓
-decrement stock
+update journal stage
       ↓
-persist
+persist stock
       ↓
-audit
+mark STOCK_PERSISTED
       ↓
-release lock
+audit SUCCESS
+      ↓
+remove pending journal
+      ↓
+release guards
 ```
 
-Implementasi final harus mempertimbangkan rollback untuk kegagalan setelah mutation dimulai.
+SELL mengikuti prinsip yang sama dengan urutan item removal → payout → stock persistence.
 
-SELL menggunakan prinsip yang sama, tetapi item player harus diverifikasi dan diamankan sebelum deposit final dilakukan.
+Jika failure terjadi setelah mutation dimulai, plugin mencoba compensation. Bila compensation/persistence tidak dapat dipercaya, persistent safety stop diaktifkan dan evidence dipertahankan.
+
+## Runtime Reload
+
+`/cve reload` membangun candidate runtime terlebih dahulu.
+
+Reload hanya mengganti runtime aktif setelah:
+- `config.yml` strict-parse sukses;
+- `shops.yml` valid tanpa rejected definition;
+- audit service candidate dapat dibuat;
+- listener candidate dapat diregistrasikan;
+- stock reconcile berhasil dipersist.
+
+GUI lama ditutup dan runtime lama dibersihkan setelah candidate siap. Safety stop tidak pernah di-reset oleh reload.
 
 ## Threading
 
-Bukkit/Paper inventory dan entity API harus dipanggil pada main thread kecuali API secara eksplisit menyatakan aman async.
+Bukkit/Paper inventory, entity, Citizens interaction, dan Vault mutation dilakukan pada main server thread.
 
-Operasi yang cocok async:
-- Discord webhook;
-- batch audit persistence tertentu;
-- pekerjaan I/O yang sudah dipisahkan dari Bukkit object.
+Transaksi dari thread async ditolak.
 
-Jangan menyimpan atau mengakses Bukkit entity/inventory object dari async task tanpa kontrol yang benar.
+Operasi yang boleh async:
+- Discord webhook delivery;
+- pekerjaan eksternal yang tidak menyentuh Bukkit object dan tidak menjadi syarat commit transaksi.
 
 ## Performance Rules
 
 - Tidak ada loop semua player setiap tick.
 - Tidak ada recalculation harga global setiap tick.
-- Tidak ada query database berat pada setiap inventory render bila data dapat di-cache aman.
-- Discord logging tidak blocking main thread.
-- Config reload tidak menghapus stok runtime tanpa migration yang eksplisit.
+- Tidak ada dynamic pricing di beta.1.
+- Discord webhook tidak blocking main transaction path.
+- Runtime data utama berada di memory dan dipersist hanya saat mutation/reconcile/flush yang diperlukan.
+- Player cooldown/in-flight state dibersihkan saat player quit/runtime shutdown.
+
+## Package Layout Aktual
+
+```text
+id.cdr.vephilimeconomy
+├── CdrVephilimEconomy.java
+├── audit/
+├── command/
+├── diagnostic/
+├── economy/
+├── gui/
+├── npc/
+├── shop/
+├── storage/
+├── transaction/
+└── util/
+```
 
 ## Future Extension Points
 
-- DynamicPricingStrategy.
-- Economy approval workflow.
-- Per-shop manager scopes.
-- RP market events.
-- PlaceholderAPI.
-- Metrics/admin dashboard.
+Mulai beta.2, fitur baru harus dibangun di atas core transaction/storage safety yang sudah dibekukan:
 
-Fitur lanjutan harus masuk sebagai modul di atas core transaction engine, bukan mengubah fondasi transaksi yang sudah stabil.
+- admin Shop Management CRUD;
+- granular permission scopes;
+- configuration change audit;
+- Economy Staff / governance;
+- controlled dynamic pricing;
+- RP market events;
+- PlaceholderAPI / metrics.
+
+Fitur lanjutan tidak boleh melewati `TransactionService`, stock persistence, journal, audit, atau safety circuit breaker hanya demi kemudahan implementasi.

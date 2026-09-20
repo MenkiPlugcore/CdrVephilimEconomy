@@ -1,0 +1,61 @@
+name: CdrVephilimEconomy
+version: '0.1.0-beta.2'
+main: id.cdr.vephilimeconomy.CdrVephilimEconomy
+api-version: '1.21.11'
+authors: [MenkiPlugcore]
+description: NPC-first economy for Vephilim Roleplay.
+website: https://github.com/MenkiPlugcore/CdrVephilimEconomy
+depend: [Citizens, Vault]
+
+commands:
+  cve:
+    description: Administrative command for CdrVephilimEconomy.
+    usage: /cve <reload|status|doctor|safety|shop>
+    aliases: [veconomy]
+
+permissions:
+  cdrvephilimeconomy.admin:
+    description: Full administrative permission for CdrVephilimEconomy.
+    default: op
+    children:
+      cdrvephilimeconomy.shop.view: true
+      cdrvephilimeconomy.shop.create: true
+      cdrvephilimeconomy.shop.delete: true
+      cdrvephilimeconomy.shop.bind: true
+      cdrvephilimeconomy.shop.toggle: true
+      cdrvephilimeconomy.shop.edit: true
+      cdrvephilimeconomy.shop.item: true
+      cdrvephilimeconomy.shop.price: true
+      cdrvephilimeconomy.shop.stock: true
+      cdrvephilimeconomy.shop.manager: true
+
+  cdrvephilimeconomy.shop.view:
+    description: View shop list, details, schema, and validation status.
+    default: false
+  cdrvephilimeconomy.shop.create:
+    description: Create shops.
+    default: false
+  cdrvephilimeconomy.shop.delete:
+    description: Delete shops.
+    default: false
+  cdrvephilimeconomy.shop.bind:
+    description: Bind or unbind Citizens NPCs to shops.
+    default: false
+  cdrvephilimeconomy.shop.toggle:
+    description: Enable or disable shops.
+    default: false
+  cdrvephilimeconomy.shop.edit:
+    description: Edit shop display name and inventory size.
+    default: false
+  cdrvephilimeconomy.shop.item:
+    description: Add, remove, move, and change listing modes.
+    default: false
+  cdrvephilimeconomy.shop.price:
+    description: Change listing buy and sell prices.
+    default: false
+  cdrvephilimeconomy.shop.stock:
+    description: Change listing stock configuration and runtime stock.
+    default: false
+  cdrvephilimeconomy.shop.manager:
+    description: Set shop responsibility metadata.
+    default: false

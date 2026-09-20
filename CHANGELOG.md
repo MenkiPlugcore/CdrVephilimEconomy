@@ -11,17 +11,226 @@ Format mengikuti prinsip Keep a Changelog dan versioning proyek akan menggunakan
 - Roadmap development awal.
 - Konsep NPC-only economy untuk Vephilim Roleplay.
 
-### Planned for beta.1
-- Citizens integration.
-- NPC-only shop interaction.
-- Buy/sell GUI.
-- Static pricing.
-- Stock engine.
-- Transaction validation.
-- Anti-dupe transaction flow.
-- Local audit log.
-- Discord audit log dasar.
+## [0.1.0-beta.1-RC7]
 
-## [beta.1]
+### Added
+- Persistent write-ahead transaction journal di `pending-transactions/` untuk setiap BUY/SELL yang sudah lolos validasi dan akan mulai memutasi uang/item.
+- Journal menyimpan transaction ID, player, shop/listing, tipe, amount, harga, intended total, stock awal, timestamp, dan stage transaksi.
+- Stage journal mencakup `PREPARED`, `MONEY_WITHDRAWN`, `ITEM_ADDED`, `ITEM_REMOVED`, `MONEY_DEPOSITED`, dan `STOCK_PERSISTED` untuk membantu rekonsiliasi setelah crash.
+- Startup recovery scan otomatis: pending transaction yang tersisa setelah crash/restart memicu persistent safety stop sebelum shop dapat dipakai.
+- Pending evidence yang sudah direkonsiliasi admin diarsipkan ke `transaction-recovery/` dan dicatat di `transaction-recovery.log` saat `/cve safety unlock CONFIRM` berhasil.
+- `/cve status`, `/cve safety status`, dan `/cve doctor` sekarang menampilkan/memeriksa jumlah pending transaction evidence.
+- Per-player in-flight transaction guard untuk menolak re-entrant/overlapping transaction pada player yang sama.
+- Guard yang menolak transaction execution dari thread async agar Bukkit inventory/Vault mutation tidak berjalan di luar main thread.
 
-Belum dirilis.
+### Changed
+- BUY/SELL sekarang membuat journal durable sebelum mutation pertama dan menghapus journal hanya setelah stock persistence selesai.
+- Jika server mati pada window antara money/item mutation dan stock commit, restart tidak menganggap transaksi selesai/bersih; ekonomi masuk fail-closed sampai admin rekonsiliasi.
+- Inventory helper sekarang mengambil snapshot storage dan mengembalikan snapshot jika add/remove internal gagal di tengah operasi, sehingga partial inventory mutation tidak dibiarkan sebagai hasil setengah jadi.
+- Semua inventory drag diblokir selama GUI shop terbuka, termasuk drag yang hanya menyentuh inventory player, untuk menghilangkan race aneh saat GUI refresh/transaksi.
+- Safety unlock sekarang mengarsipkan pending transaction evidence sebelum persistent safety lock boleh dibuka.
+- Doctor menandai pending transaction journal sebagai `FAIL`; pending evidence tanpa safety stop juga dianggap failure korelasi.
+- Artifact/version candidate dinaikkan menjadi `0.1.0-beta.1-RC7`.
+
+### Security / Safety
+- Hard-crash window antara withdraw/deposit, inventory mutation, dan stock persistence sekarang meninggalkan durable recovery evidence.
+- Journal write/stage/finalization failure memicu safety stop daripada membiarkan transaksi berikutnya berjalan dengan state yang tidak dapat dibuktikan konsisten.
+- Successful transaction tidak meninggalkan pending journal; stale pending journal selalu diperlakukan sebagai kondisi yang memerlukan investigasi.
+- Recovery tidak menghapus bukti transaksi; evidence dipindahkan ke arsip recovery sebelum ekonomi dibuka kembali.
+- Re-entrant transaction dan transaction async ditolak sebelum mutation bisnis dijalankan.
+
+### Status
+- `0.1.0-beta.1-RC7` menggantikan RC6 sebagai kandidat regression/anti-dupe terakhir sebelum `beta.1` final.
+- BUY/SELL satuan dan bulk tetap tercatat lolos pengujian awal user; fokus QA RC7 adalah crash-window journal, spam/re-entrant guard, persistence/restart, dan final regression.
+
+## [0.1.0-beta.1-RC6]
+
+### Added
+- Command admin `/cve doctor` untuk menjalankan health diagnostics non-destruktif dari satu command.
+- Doctor memeriksa runtime service, Citizens, Vault/economy provider, strict YAML `config.yml` dan `shops.yml`, sinkronisasi runtime-vs-disk, binding NPC Citizens, stock snapshot, backup, marker anti-reset, stale temp file, filesystem writability, audit writer, Discord webhook configuration, serta persistent safety state.
+- Output doctor menggunakan status `PASS`, `WARN`, dan `FAIL` beserta summary total agar masalah operasional cepat dilokalisasi.
+- Stock doctor membandingkan `stock.yml` utama terhadap stock runtime untuk mendeteksi persisted/runtime mismatch tanpa mengubah stock.
+
+### Changed
+- Audit service sekarang mengekspos health state secara aman tanpa membocorkan webhook URL.
+- Discord doctor hanya memvalidasi konfigurasi URL secara lokal; command tidak melakukan network ping dan tidak mengirim webhook test.
+- Artifact/version candidate dinaikkan menjadi `0.1.0-beta.1-RC6`.
+
+### Security / Safety
+- `/cve doctor` bersifat read-mostly; satu-satunya write test adalah temporary file di data folder yang langsung dihapus untuk memastikan storage writable.
+- Safety stop aktif selalu muncul sebagai `FAIL` pada doctor dan tidak dapat diubah oleh command doctor.
+- `stock.yml.initialized` yang hilang dianggap failure karena melemahkan perlindungan anti-reset supply.
+
+### Status
+- `0.1.0-beta.1-RC6` menggantikan RC5 sebagai kandidat runtime QA.
+- BUY/SELL satuan dan bulk tetap tercatat lolos pengujian awal user; fokus QA berikutnya adalah doctor diagnostics dan regression/anti-dupe final sebelum beta.1 final.
+
+## [0.1.0-beta.1-RC5]
+
+### Added
+- Persistent `safety.lock` untuk menyimpan economy safety stop lintas restart/plugin reload.
+- Safety lock menyimpan schema, timestamp stop, transaction ID, dan reason kegagalan kritis.
+- `/cve safety status` untuk melihat status recovery, transaction ID, timestamp, persistence state, dan reason.
+- `/cve safety unlock CONFIRM` sebagai recovery eksplisit setelah admin melakukan rekonsiliasi manual.
+- `safety-history.log` untuk mencatat siapa dan kapan safety stop dibuka.
+- `safety.lock.last` untuk mempertahankan bukti raw safety lock terakhir setelah recovery.
+
+### Changed
+- Restart server/plugin tidak lagi menghapus safety stop aktif.
+- `/cve reload` tetap tidak dapat melewati safety lock.
+- NPC shop tidak dapat dibuka selama safety stop aktif.
+- Safety trip menutup GUI shop aktif dan seluruh transaksi berikutnya tetap fail-closed.
+- Recovery memaksa stock snapshot berhasil di-flush sebelum safety lock boleh dibuka.
+- `safety.lock` invalid/corrupt dianggap sebagai kondisi fail-closed, bukan safety normal.
+- Startup stock repository baru dipasang ke field runtime hanya setelah load berhasil sehingga disable setelah load failure tidak dapat mem-flush snapshot kosong ke file stock corrupt.
+- Artifact/version candidate dinaikkan menjadi `0.1.0-beta.1-RC5`.
+
+### Security / Safety
+- Safety stop sekarang survive restart sehingga restart tidak dapat dipakai sebagai bypass circuit breaker.
+- Recovery membutuhkan konfirmasi literal `CONFIRM` dan meninggalkan recovery trail.
+- Jika penulisan `safety.lock` gagal, runtime tetap STOPPED dan status menunjukkan persistence safety tidak sehat.
+
+### Status
+- `0.1.0-beta.1-RC5` menggantikan RC4 sebagai kandidat runtime QA.
+- BUY/SELL satuan dan bulk tetap tercatat lolos pengujian awal user; fokus QA berikutnya adalah persistent safety recovery, anti-dupe, dan restart edge cases.
+
+## [0.1.0-beta.1-RC4]
+
+### Added
+- Runtime economy safety latch/circuit breaker yang memblokir semua transaksi baru jika terjadi kegagalan kompensasi kritis atau kegagalan persistence stock saat transaksi.
+- Status safety latch ikut tampil pada `/cve status` dan startup/reload diagnostics.
+- Pesan player khusus `messages.safety-stop` ketika ekonomi masuk mode fail-closed.
+
+### Changed
+- BUY rollback pada kegagalan persistence sekarang menghindari refund bila item hasil transaksi tidak berhasil ditarik kembali, supaya tidak menciptakan kombinasi item gratis + uang kembali.
+- SELL rollback pada kegagalan persistence sekarang hanya mengembalikan item jika payout berhasil ditarik kembali; jika payout rollback gagal, item tidak dikembalikan untuk menghindari money+item duplication.
+- Kegagalan persistence stock sekarang selalu mengaktifkan safety stop setelah compensation attempt, karena storage dianggap tidak sehat untuk transaksi lanjutan.
+- Kegagalan refund/restore kritis juga mengaktifkan safety stop.
+- Safety latch tidak di-reset oleh `/cve reload`; admin harus investigasi sebelum membuka ekonomi lagi.
+- Audit `FAILED` sekarang menyimpan intended transaction total, bukan selalu `0`, agar investigasi kegagalan lebih jelas.
+- GUI shop otomatis ditutup ketika transaksi ditolak karena safety stop.
+- Artifact/version candidate dinaikkan menjadi `0.1.0-beta.1-RC4`.
+
+### Security / Safety
+- Fail-closed circuit breaker mencegah kegagalan rollback berulang dipakai sebagai jalur dupe.
+- Jalur rollback BUY/SELL memprioritaskan mencegah duplikasi nilai meskipun dalam kegagalan ekstrem mungkin dibutuhkan rekonsiliasi manual oleh admin.
+- Hot reload tidak dapat digunakan untuk melewati safety stop yang sudah aktif.
+
+### Status
+- `0.1.0-beta.1-RC4` menggantikan RC3 sebagai kandidat runtime QA.
+- BUY/SELL satuan dan bulk tetap tercatat lolos pengujian awal user; fokus QA berikutnya adalah anti-dupe, persistence failure, dan safety-stop behavior.
+
+## [0.1.0-beta.1-RC3]
+
+### Fixed
+- Validasi slot listing kini memastikan `slot < size` sehingga konfigurasi slot di luar GUI ditolak sebelum player membuka shop.
+- Duplicate slot dalam shop kini benar-benar ditolak saat load/reload, bukan baru berpotensi menimpa item GUI.
+- Reload `config.yml` sekarang divalidasi secara strict sebelum runtime lama disentuh; YAML invalid tidak lagi dapat membuat config in-memory berubah sebagian.
+- Registrasi listener runtime baru sekarang memiliki rollback cleanup jika registrasi gagal.
+
+### Changed
+- `mode` tetap menjadi sumber kebenaran arah transaksi. `buy-price` tidak otomatis mengaktifkan BUY ketika mode masih `SELL`, dan sebaliknya.
+- Listing dengan harga pada arah yang dinonaktifkan sekarang menghasilkan warning console yang eksplisit saat startup/reload.
+- `/cve reload` melaporkan jumlah warning konfigurasi bila ada.
+- `/cve status` menampilkan `configWarnings`.
+- Contoh `shops.yml` sekarang menjelaskan perbedaan `mode` dan harga agar admin tidak mengira harga saja mengaktifkan arah transaksi.
+- Artifact/version candidate dinaikkan menjadi `0.1.0-beta.1-RC3`.
+
+### Security / Safety
+- Invalid `config.yml` atau `shops.yml` tidak mengganti runtime lama yang masih sehat.
+- Konfigurasi slot ambigu/out-of-range tidak dapat menghasilkan GUI dengan mapping listing yang salah.
+
+### Status
+- `0.1.0-beta.1-RC3` menggantikan RC2 sebagai kandidat runtime QA.
+- BUY/SELL satuan dan bulk telah lolos pengujian awal user; audit lanjutan tetap berjalan sebelum `beta.1` final.
+
+## [0.1.0-beta.1-RC2]
+
+### Added
+- Command admin `/cve reload` untuk reload runtime tanpa restart server.
+- Command admin `/cve status` untuk melihat ringkasan version, shop, NPC binding, listing, dan stock entry.
+- Alias `/veconomy` untuk command admin.
+- Runtime stock reconcile yang mempertahankan stock listing existing, menginisialisasi listing baru dari `initial-stock`, menghapus entry listing yang sudah dihapus, dan clamp stock jika `max-stock` diperkecil.
+- Strict YAML loading untuk `shops.yml` agar syntax error tidak berubah menjadi registry kosong secara diam-diam.
+
+### Changed
+- Reload runtime membangun registry, transaction service, GUI service, audit service, dan listener baru lalu mengganti runtime lama tanpa restart server.
+- Semua GUI shop aktif ditutup saat reload agar holder/listing lama tidak dapat dipakai setelah konfigurasi berubah.
+- `config.yml` ikut direload sehingga cooldown, bulk amount, max amount, NPC distance, audit policy, Discord webhook, serta messages dapat diperbarui tanpa restart.
+- Reload ditolak bila `shops.yml` invalid atau memiliki rejected definition; runtime lama tetap aktif.
+- Artifact/version candidate dinaikkan menjadi `0.1.0-beta.1-RC2`.
+
+### Security / Safety
+- `/cve reload` hanya dapat dipakai oleh `cdrvephilimeconomy.admin`.
+- Stock reconcile bersifat rollback-on-persist-failure; jika snapshot baru gagal ditulis, stock runtime lama dipulihkan.
+- Runtime reload tidak mengandalkan `/reload`, PlugMan, atau plugin hot-unload pihak ketiga.
+- Reload dengan konfigurasi shop invalid tidak mengganti binding NPC aktif yang sebelumnya sehat.
+
+### Status
+- `0.1.0-beta.1-RC2` menggantikan RC1 sebagai kandidat runtime QA.
+- Runtime QA tetap wajib sebelum `beta.1` ditandai final.
+
+## [0.1.0-beta.1-RC1]
+
+### Added
+- Bootstrap project Maven untuk Paper 1.21.11 / Java 21.
+- Integrasi Citizens `2.0.43-SNAPSHOT` untuk membuka shop dari NPC terdaftar.
+- Integrasi Vault API untuk saldo, withdraw, deposit, format currency, dan tampilan saldo pada GUI.
+- Shop registry berbasis `shops.yml`.
+- GUI NPC shop dengan BUY, SELL, BUY+SELL.
+- Klik kiri/kanan dan bulk transaction via shift-click.
+- Static buy/sell pricing.
+- Persistent stock melalui `stock.yml`.
+- Validasi saldo, inventory capacity, item yang dapat dijual, stock, dan max stock.
+- Listing-level transaction lock dan player transaction cooldown.
+- Best-effort rollback untuk kegagalan mutation/persistence.
+- Local audit log dengan transaction ID.
+- Discord webhook audit async.
+- GitHub Actions build validation dan artifact JAR.
+- `docs/BETA1_TEST_PLAN.md` untuk runtime QA/anti-dupe regression.
+- Configurable `transaction.max-amount` dengan hard safety clamp 1-2304.
+- Pesan khusus untuk transaksi yang tidak diizinkan.
+- NPC proximity guard melalui `npc.max-transaction-distance` agar GUI yang sudah terbuka tidak bisa dipakai untuk remote trading.
+- `stock.yml.bak` sebagai recovery snapshot stock.
+- Metadata schema dan timestamp pada snapshot stock.
+- Strict YAML validation untuk stock utama, backup, dan temporary snapshot.
+- Audit `REJECTED` untuk transaksi yang gagal validasi bisnis, dapat dikontrol melalui config.
+- Config terpisah untuk menahan spam audit BUSY/cooldown.
+- Opsi Discord `include-rejected` agar penolakan normal tidak memenuhi webhook secara default.
+- Cleanup cooldown state saat player keluar dari server.
+- `stock.yml.initialized` marker untuk mendeteksi kehilangan seluruh snapshot setelah storage pernah diinisialisasi.
+- Startup diagnostics untuk jumlah shop, shop aktif, NPC binding, listing, stock entry, dan rejected definition.
+- Clean shutdown yang menutup GUI shop aktif, membersihkan transaction state, flush stock, lalu menutup audit writer.
+
+### Changed
+- `bulk-amount` sekarang otomatis dinormalisasi agar tidak melebihi `max-amount`.
+- Shop/listing ID dinormalisasi ke lowercase dan hanya menerima `[a-z0-9_-]` maksimal 48 karakter.
+- Definisi shop invalid sekarang ditolak secara fail-closed tanpa ikut masuk registry aktif.
+- Duplicate Citizens NPC binding ditolak sebelum shop dimasukkan ke registry.
+- Validasi startup diperketat untuk display name, NPC ID, inventory size, material, mode, harga finite/non-negatif, dan stock bounds.
+- Startup log sekarang menampilkan jumlah shop aktif, definition yang ditolak, transaction guard efektif, batas jarak NPC, audit policy, dan storage diagnostics.
+- Setiap klik transaksi memverifikasi ulang NPC masih spawn, binding masih valid, world sama, dan player masih berada di jarak yang diizinkan.
+- Persistence stock sekarang menulis temporary snapshot, memverifikasi hasil serialisasi, lalu melakukan atomic replace bila filesystem mendukung.
+- Snapshot stock corrupt tidak lagi diam-diam dianggap stock kosong; plugin mencoba backup dan jika recovery gagal akan fail-closed.
+- Jika semua snapshot stock hilang setelah storage pernah diinisialisasi, plugin fail-closed daripada memakai `initial-stock` dan berisiko menggandakan supply.
+- Nilai stock non-integer/out-of-bounds dinormalisasi secara eksplisit dan ditulis ulang ke snapshot sehat.
+- Discord audit tetap menerima SUCCESS/FAILED secara default, tetapi REJECTED hanya ikut jika diaktifkan.
+- GUI sekarang menampilkan saldo player, stock, harga, jumlah bulk efektif, serta status stok habis/penuh.
+- Artifact/version candidate dinaikkan dari SNAPSHOT ke `0.1.0-beta.1-RC1`.
+
+### Security / Safety
+- Player tidak memiliki command shop.
+- GUI menggunakan custom inventory holder dan memblokir click/drag mutation.
+- SELL beta.1 hanya menerima item vanilla polos yang `isSimilar` dengan template material sehingga custom meta/enchant tidak tersapu sebagai item biasa.
+- Batas jumlah transaksi tidak lagi hardcoded sebagai satu-satunya kontrol; nilai konfigurasi tetap dipagari hard limit internal.
+- Konfigurasi shop yang ambigu/duplikat tidak boleh menghasilkan binding NPC parsial.
+- Player tidak dapat membuka NPC shop lalu berjalan atau teleport jauh untuk tetap bertransaksi dari jarak jauh.
+- Stock persistence menggunakan backup/recovery dan plugin memilih disable daripada mereset stock secara diam-diam ketika snapshot utama dan backup sama-sama tidak dapat dipercaya.
+- Marker initialization mencegah kondisi semua file stock hilang berubah menjadi bootstrap stock baru tanpa peringatan.
+- Penolakan transaksi penting memiliki jejak audit lokal untuk membantu investigasi exploit tanpa menjadikan BUSY spam sebagai default.
+- Cooldown map tidak menahan UUID player selamanya setelah player keluar dan seluruh transaction state dibersihkan saat plugin disable.
+
+### Status
+- `0.1.0-beta.1-RC1` adalah kandidat runtime QA pertama.
+- Build Maven berjalan melalui GitHub Actions untuk setiap update branch `dev/beta.1`.
+- Runtime QA di server Paper masih wajib sebelum `beta.1` ditandai final.

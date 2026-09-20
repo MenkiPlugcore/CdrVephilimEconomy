@@ -1,0 +1,39 @@
+meta:
+  schema: 2
+
+shops:
+  blacksmith:
+    display-name: "<gold>Blacksmith Kerajaan</gold>"
+    npc-id: -1
+    size: 27
+    enabled: false
+    manager: ""
+    listings:
+      iron_ingot:
+        material: IRON_INGOT
+        slot: 10
+        mode: BUY_SELL
+        buy-price: 50.0
+        sell-price: 30.0
+        initial-stock: 128
+        max-stock: 256
+      coal:
+        material: COAL
+        slot: 11
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 8.0
+        initial-stock: 0
+        max-stock: 1024
+
+# beta.2 RC2 schema v2:
+# - File beta.1/RC1 tanpa meta.schema dianggap legacy schema v1 dan dimigrasikan otomatis.
+# - Sebelum migration, backup dibuat sebagai shops.yml.schema-v1.bak.
+# - Operasi rutin shop dapat dilakukan melalui /cve shop ... tanpa edit YAML manual.
+# - /cve shop schema dan /cve shop validate dapat dipakai untuk diagnostic management config.
+# - npc-id harus menunjuk Citizens NPC yang valid; -1 berarti belum dibind.
+# - enabled harus true agar NPC membuka GUI.
+# - manager adalah metadata penanggung jawab shop dan tidak memberi permission otomatis.
+# - mode menentukan arah transaksi: BUY, SELL, atau BUY_SELL.
+# - stock runtime disimpan terpisah di stock.yml; initial-stock hanya dipakai saat listing baru pertama kali dibuat.
+# - identitas item saat ini masih berbasis item vanilla/material polos.

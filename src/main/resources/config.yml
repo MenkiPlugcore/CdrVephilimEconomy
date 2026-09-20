@@ -1,0 +1,61 @@
+transaction:
+  # Cooldown antar transaksi per player untuk menahan double-click/spam.
+  cooldown-ms: 250
+
+  # Jumlah item saat Shift+klik.
+  # Nilai ini otomatis dibatasi agar tidak melebihi max-amount.
+  bulk-amount: 16
+
+  # Batas keras jumlah item dalam satu transaksi.
+  # Safety clamp internal: 1-2304.
+  max-amount: 64
+
+npc:
+  # Player wajib tetap berada dekat NPC saat melakukan transaksi.
+  # Ini mencegah GUI shop dipakai dari jarak jauh setelah player berjalan/teleport.
+  # Safety clamp internal: 1.0-32.0 block.
+  max-transaction-distance: 6.0
+
+audit:
+  local-enabled: true
+
+  # Catat transaksi yang ditolak seperti saldo kurang, stock kurang,
+  # inventory penuh, mode BUY/SELL tidak diizinkan, dan max-stock tercapai.
+  log-rejected-transactions: true
+
+  # BUSY/cooldown bisa sangat spam, default tidak dicatat.
+  log-busy-rejections: false
+
+  discord:
+    enabled: false
+    webhook-url: ""
+
+    # Default false supaya penolakan biasa tidak membanjiri Discord.
+    # FAILED/internal error tetap dikirim saat Discord audit aktif.
+    include-rejected: false
+
+# beta.2 administrative audit terpisah dari transaction audit.
+# Local admin audit selalu menjadi bukti utama/fail-closed untuk mutation shop.
+admin-audit:
+  discord:
+    enabled: false
+    webhook-url: ""
+
+    # REQUEST bisa sangat ramai. SUCCESS/FAILED/REJECTED tetap dikirim
+    # saat Discord admin audit aktif walaupun opsi ini false.
+    include-requests: false
+
+messages:
+  prefix: "<dark_gray>[<gold>Vephilim Economy</gold>]</dark_gray> "
+  buy-success: "<green>Membeli <yellow>{amount}x {item}</yellow> seharga <gold>{total}</gold>.</green>"
+  sell-success: "<green>Menjual <yellow>{amount}x {item}</yellow> seharga <gold>{total}</gold>.</green>"
+  insufficient-money: "<red>Uangmu tidak cukup.</red>"
+  insufficient-stock: "<red>Stok pedagang tidak mencukupi.</red>"
+  insufficient-items: "<red>Item yang bisa dijual tidak mencukupi.</red>"
+  inventory-full: "<red>Inventory tidak memiliki ruang yang cukup.</red>"
+  max-stock: "<red>Pedagang tidak dapat menerima stok sebanyak itu.</red>"
+  busy: "<yellow>Transaksi sedang diproses. Coba lagi sebentar.</yellow>"
+  not-allowed: "<red>Transaksi tersebut tidak diizinkan oleh pedagang.</red>"
+  too-far: "<red>Kamu terlalu jauh dari pedagang. Dekati NPC untuk melanjutkan transaksi.</red>"
+  safety-stop: "<dark_red>Sistem ekonomi sedang dikunci otomatis karena mendeteksi kegagalan transaksi kritis. Hubungi staff.</dark_red>"
+  internal-error: "<red>Transaksi gagal dan dibatalkan. Tidak ada item atau uang yang seharusnya hilang.</red>"
