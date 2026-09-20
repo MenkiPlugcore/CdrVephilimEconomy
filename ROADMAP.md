@@ -54,21 +54,27 @@ Dokumentasi final: [`docs/BETA1_FINAL.md`](docs/BETA1_FINAL.md).
 
 Target: admin dapat mengelola shop tanpa edit source code atau bergantung pada edit YAML manual untuk operasi rutin.
 
-- [ ] Command/listing admin CRUD.
-- [ ] Tambah/hapus NPC shop.
-- [ ] Bind/unbind Citizens NPC.
-- [ ] Enable/disable shop.
-- [ ] Tambah/hapus item listing.
-- [ ] Edit mode BUY/SELL/BUY_SELL.
-- [ ] Edit harga BUY/SELL.
-- [ ] Set/add/remove stock secara aman.
-- [ ] Edit batas stok.
-- [ ] Persistence perubahan konfigurasi secara transactional.
-- [ ] Reload/config migration aman.
-- [ ] Permission admin yang granular.
-- [ ] Identitas penanggung jawab shop.
-- [ ] Audit perubahan konfigurasi ekonomi.
-- [ ] Safety guard untuk perubahan stock/harga sensitif.
+- [x] Command/listing admin CRUD foundation.
+- [x] Tambah/hapus NPC shop.
+- [x] Bind/unbind Citizens NPC.
+- [x] Enable/disable shop.
+- [x] Tambah/hapus item listing.
+- [x] Edit mode BUY/SELL/BUY_SELL.
+- [x] Edit harga BUY/SELL.
+- [x] Set/add/remove stock secara aman.
+- [x] Edit initial-stock dan max-stock.
+- [x] Persistence perubahan konfigurasi secara transactional dengan candidate validation + backup.
+- [x] Safe runtime apply tanpa restart setelah perubahan admin.
+- [x] Permission admin yang granular.
+- [x] Identitas penanggung jawab shop (`manager`).
+- [x] Audit lokal perubahan konfigurasi ekonomi (`admin-audit.log`).
+- [x] Destructive confirmation untuk delete shop/listing.
+- [x] Safety guard: runtime stock mutation ditolak saat economy safety stop aktif.
+- [ ] Migration/versioning formal untuk schema `shops.yml` lintas beta.
+- [ ] Discord administrative audit sink.
+- [ ] Admin GUI opsional untuk operasi rutin tanpa command panjang.
+
+**Status implementasi:** `0.1.0-beta.2-RC1` membuka branch `dev/beta.2` di atas frozen baseline beta.1. Fokus RC1 adalah command-driven management yang transactional dan audited; tidak mengubah core transaction engine beta.1.
 
 ## beta.3 — Economy Staff & Governance
 
