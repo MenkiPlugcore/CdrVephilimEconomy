@@ -9,6 +9,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -22,11 +23,13 @@ public final class ShopRegistry {
     private final Map<String, Shop> shopsById = new LinkedHashMap<>();
     private final Map<Integer, Shop> shopsByNpcId = new LinkedHashMap<>();
     private int rejectedDefinitions;
+    private int configurationWarnings;
 
     public void load(File file, Logger logger) throws IOException {
         shopsById.clear();
         shopsByNpcId.clear();
         rejectedDefinitions = 0;
+        configurationWarnings = 0;
 
         YamlConfiguration yaml = new YamlConfiguration();
         try {
@@ -68,6 +71,8 @@ public final class ShopRegistry {
                 } else if (shop.enabled()) {
                     logger.warning("Shop '" + shop.id() + "' enabled tetapi npc-id belum valid. Shop tidak dibind ke NPC.");
                 }
+
+                emitModeWarnings(shop, logger);
             } catch (RuntimeException exception) {
                 rejectedDefinitions++;
                 logger.severe("Shop '" + rawShopId + "' ditolak: " + exception.getMessage());
@@ -75,7 +80,9 @@ public final class ShopRegistry {
         }
 
         logger.info("Loaded " + shopCount() + " shop definition(s), "
-                + activeBindingCount() + " active NPC binding(s), " + rejectedDefinitions + " rejected definition(s).");
+                + activeBindingCount() + " active NPC binding(s), "
+                + rejectedDefinitions + " rejected definition(s), "
+                + configurationWarnings + " configuration warning(s).");
     }
 
     private Shop parseShop(String shopId, ConfigurationSection section) {
@@ -95,6 +102,7 @@ public final class ShopRegistry {
         }
 
         Map<String, ShopListing> listings = new LinkedHashMap<>();
+        Map<Integer, String> usedSlots = new HashMap<>();
         ConfigurationSection listingRoot = section.getConfigurationSection("listings");
         if (listingRoot != null) {
             for (String rawListingId : listingRoot.getKeys(false)) {
@@ -109,6 +117,17 @@ public final class ShopRegistry {
                 }
 
                 ShopListing listing = parseListing(listingId, listingSection);
+                if (listing.slot() >= size) {
+                    throw new IllegalArgumentException("slot " + listing.slot() + " untuk listing '" + listingId
+                            + "' berada di luar GUI size " + size + " (slot valid 0-" + (size - 1) + ")");
+                }
+
+                String existing = usedSlots.putIfAbsent(listing.slot(), listingId);
+                if (existing != null) {
+                    throw new IllegalArgumentException("slot " + listing.slot() + " dipakai oleh listing '"
+                            + existing + "' dan '" + listingId + "'");
+                }
+
                 listings.put(listing.id(), listing);
             }
         }
@@ -159,6 +178,23 @@ public final class ShopRegistry {
         return new ShopListing(listingId, material, slot, mode, buyPrice, sellPrice, initialStock, maxStock);
     }
 
+    private void emitModeWarnings(Shop shop, Logger logger) {
+        for (ShopListing listing : shop.listings().values()) {
+            if (!listing.mode().canBuy() && listing.buyPrice() > 0) {
+                configurationWarnings++;
+                logger.warning("Listing '" + shop.id() + "/" + listing.id() + "' memiliki buy-price="
+                        + listing.buyPrice() + " tetapi mode=" + listing.mode()
+                        + ". Harga beli diabaikan. Gunakan mode BUY_SELL atau BUY untuk mengaktifkan pembelian.");
+            }
+            if (!listing.mode().canSell() && listing.sellPrice() > 0) {
+                configurationWarnings++;
+                logger.warning("Listing '" + shop.id() + "/" + listing.id() + "' memiliki sell-price="
+                        + listing.sellPrice() + " tetapi mode=" + listing.mode()
+                        + ". Harga jual diabaikan. Gunakan mode BUY_SELL atau SELL untuk mengaktifkan penjualan.");
+            }
+        }
+    }
+
     public Optional<Shop> findByNpcId(int npcId) {
         return Optional.ofNullable(shopsByNpcId.get(npcId));
     }
@@ -189,6 +225,10 @@ public final class ShopRegistry {
 
     public int rejectedDefinitionCount() {
         return rejectedDefinitions;
+    }
+
+    public int configurationWarningCount() {
+        return configurationWarnings;
     }
 
     private static String normalizeId(String raw, String type) {
