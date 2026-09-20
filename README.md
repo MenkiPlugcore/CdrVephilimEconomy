@@ -4,12 +4,12 @@
 
 ## Status
 
-- **Current development:** `0.1.0-beta.3-RC2`
+- **Current development:** `0.1.0-beta.3-RC3`
 - **Frozen Shop Management baseline:** `0.1.0-beta.2`
 - **Frozen Core Economy baseline:** `0.1.0-beta.1`
 - Branch development aktif: `dev/beta.3`
 
-beta.3 RC1 membuka role/scope Economy Staff. RC2 menambahkan **sensitive-change approval** dengan hierarchy reviewer, expiry, anti-self-approval, durable execution evidence, dan fail-closed recovery.
+beta.3 RC1 membuka role/scope Economy Staff. RC2 menambahkan **sensitive-change approval**. RC3 menambahkan **rolling quota + cooldown anti-abuse** agar limit per operasi tidak dapat dibypass dengan banyak perubahan kecil beruntun.
 
 ## Core Economy
 
@@ -95,17 +95,14 @@ governance:
 ```
 
 Untuk role-only Staff/Manager:
-
-- perubahan harga di dalam limit langsung dieksekusi;
+- perubahan harga di dalam limit dapat direct mutation;
 - harga di atas limit menjadi approval request;
 - perubahan harga dari base `0` menjadi approval request;
-- ADD/REMOVE runtime stock di dalam limit langsung dieksekusi;
+- ADD/REMOVE runtime stock di dalam limit dapat direct mutation;
 - delta stock di atas limit menjadi approval request;
 - runtime stock `SET` selalu menjadi approval request.
 
-Treasurer/admin/permission beta.2 eksplisit tetap dapat direct mutation.
-
-## Approval Commands
+Approval commands:
 
 ```text
 /cve governance approval status
@@ -118,38 +115,36 @@ Treasurer/admin/permission beta.2 eksplisit tetap dapat direct mutation.
 /cve governance approval recover <id> <executed|not-executed> CONFIRM
 ```
 
-Reviewer hierarchy:
+Requester tidak dapat approve/reject request sendiri. Manager dapat review Staff pada scope yang sama; Treasurer dapat review Manager/Staff. Approval memakai durable `EXECUTING` evidence sebelum mutation untuk mencegah replay ambigu setelah crash.
 
-- Manager dapat review request Staff pada scope yang sama.
-- Treasurer dapat review request Staff/Manager pada scope yang sama.
-- role peer/lower tidak dapat approve.
-- requester tidak dapat approve/reject request sendiri.
-- requester dapat cancel request sendiri.
-- `cdrvephilimeconomy.governance.approve` memberi reviewer override tanpa hak grant/revoke.
+## RC3 Rolling Governance Quota
 
-## Durable Approval Recovery
+Direct mutation kecil sekarang dibatasi lagi secara kumulatif.
 
-Approval disimpan di:
+```yaml
+governance:
+  quota:
+    enabled: true
+    retention-hours: 48
 
-```text
-governance-approvals.yml
-governance-approvals.yml.bak
-governance-approvals.yml.tmp
+    economy-staff:
+      window-minutes: 60
+      max-price-percent-sum: 40.0
+      max-stock-delta-sum: 256
+      cooldown-seconds: 15
+
+    economy-manager:
+      window-minutes: 60
+      max-price-percent-sum: 100.0
+      max-stock-delta-sum: 4096
+      cooldown-seconds: 5
 ```
 
-Sebelum mutation approved dipanggil, state dipersist menjadi `EXECUTING`. Jika server crash pada window tersebut, subsystem approval masuk `recoveryBlocked=true` dan **tidak replay mutation otomatis**.
+Contoh Staff: harga `100 -> 120` memakai sekitar 20 quota points; setelah cooldown, `120 -> 144` memakai sekitar 20 lagi. Total 40/40, sehingga direct price mutation berikutnya diblokir sampai rolling window berkurang.
 
-Admin harus memeriksa shop/stock/admin audit, lalu menandai hasil rekonsiliasi:
+Stock menggunakan absolute delta yang sama: ADD/REMOVE berulang tetap dijumlahkan. Quota bersifat global per staff account dan cooldown berlaku lintas direct price/stock mutation.
 
-```text
-/cve governance approval recover <id> executed CONFIRM
-```
-
-atau:
-
-```text
-/cve governance approval recover <id> not-executed CONFIRM
-```
+Per-operation sensitive changes tetap memakai approval RC2. Full admin, Royal Treasurer, dan explicit beta.2 permission dianggap operator override dan tidak dibatasi rolling quota.
 
 ## Governance Persistence
 
@@ -157,9 +152,19 @@ atau:
 governance.yml
 governance.yml.bak
 governance.yml.tmp
+
+governance-approvals.yml
+governance-approvals.yml.bak
+governance-approvals.yml.tmp
+
+governance-usage.yml
+governance-usage.yml.bak
+governance-usage.yml.tmp
 ```
 
-Governance role storage dan approval storage sama-sama memakai strict YAML validation dan temporary + atomic replace bila filesystem mendukung.
+Quota reservation dipersist sebelum direct role mutation dijalankan. Jika downstream mutation gagal, reservation tetap dihitung sampai window expiry; desain ini sengaja konservatif agar retry/crash tidak menjadi bypass quota.
+
+Jika quota ledger corrupt/unwritable, direct role-only price/stock mutation diblokir fail-closed, tetapi BUY/SELL core dan operator recovery tidak otomatis dihentikan.
 
 ## Permissions
 
@@ -191,19 +196,12 @@ cdrvephilimeconomy.governance.admin
 
 ## Audit
 
-Grant/revoke dan approval memakai `logs/admin-audit.log`. Jika Discord administrative audit aktif, event governance/approval juga dikirim async melalui sink yang sama.
+Grant/revoke, approval, dan quota reservation memakai `logs/admin-audit.log`. Jika Discord administrative audit aktif, event governance/approval juga dikirim async melalui sink yang sama.
 
-Approval event utama:
+Event quota:
 
 ```text
-GOV_APPROVAL_REQUEST
-GOV_APPROVAL_APPROVE_REQUEST
-GOV_APPROVAL_EXECUTE_SUCCESS
-GOV_APPROVAL_EXECUTE_FAILED
-GOV_APPROVAL_REJECTED
-GOV_APPROVAL_CANCELLED
-GOV_APPROVAL_EXPIRED
-GOV_APPROVAL_RECOVERY_RESOLVED
+GOVERNANCE_QUOTA_RESERVED
 ```
 
 ## Integrasi
@@ -221,12 +219,13 @@ GOV_APPROVAL_RECOVERY_RESOLVED
 - [`docs/BETA2_FINAL.md`](docs/BETA2_FINAL.md)
 - [`docs/BETA3_RC1.md`](docs/BETA3_RC1.md)
 - [`docs/BETA3_RC2.md`](docs/BETA3_RC2.md)
+- [`docs/BETA3_RC3.md`](docs/BETA3_RC3.md)
 - [`docs/BETA3_TEST_PLAN.md`](docs/BETA3_TEST_PLAN.md)
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - [`docs/ECONOMY_DESIGN.md`](docs/ECONOMY_DESIGN.md)
 
 ## Next beta.3 Update
 
-Setelah RC2 QA aman, update berikutnya diarahkan ke **rolling governance quota + cooldown** dan kemungkinan **two-person approval** untuk perubahan paling sensitif sebelum final regression/security pass beta.3.
+Setelah RC3 QA aman, beta.3 tinggal hardening governance terakhir: opsi **two-person approval** untuk perubahan paling sensitif, final regression/security audit, lalu finalisasi `0.1.0-beta.3`.
 
 Plugin dikembangkan oleh **MenkiPlugcore** untuk **Vephilim Roleplay**.
