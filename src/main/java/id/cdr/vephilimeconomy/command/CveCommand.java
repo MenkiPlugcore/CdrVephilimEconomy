@@ -3,6 +3,7 @@ package id.cdr.vephilimeconomy.command;
 import id.cdr.vephilimeconomy.CdrVephilimEconomy;
 import id.cdr.vephilimeconomy.admin.ShopAdminService;
 import id.cdr.vephilimeconomy.diagnostic.DoctorService;
+import id.cdr.vephilimeconomy.governance.GovernanceApprovalService;
 import id.cdr.vephilimeconomy.governance.GovernanceCapability;
 import id.cdr.vephilimeconomy.governance.GovernanceRole;
 import id.cdr.vephilimeconomy.governance.GovernanceService;
@@ -38,6 +39,7 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
 
     private final CdrVephilimEconomy plugin;
     private final GovernanceService governance;
+    private final GovernanceApprovalService approvals;
 
     public CveCommand(CdrVephilimEconomy plugin) {
         this.plugin = plugin;
@@ -45,6 +47,11 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
         GovernanceService.Result loaded = governance.load();
         if (!loaded.success()) {
             plugin.getLogger().severe("Beta.3 governance runtime tidak sehat: " + loaded.message());
+        }
+        this.approvals = new GovernanceApprovalService(plugin, governance);
+        GovernanceApprovalService.Result approvalLoaded = approvals.load();
+        if (!approvalLoaded.success()) {
+            plugin.getLogger().severe("Beta.3 approval runtime tidak sehat: " + approvalLoaded.message());
         }
     }
 
@@ -56,55 +63,53 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
         }
 
         String sub = args[0].toLowerCase(Locale.ROOT);
-        if (sub.equals("shop")) {
-            return handleShop(sender, args);
-        }
-        if (sub.equals("governance")) {
-            return handleGovernance(sender, args);
-        }
+        if (sub.equals("shop")) return handleShop(sender, args);
+        if (sub.equals("governance")) return handleGovernance(sender, args);
 
         if (!hasAdmin(sender)) {
             sender.sendMessage("§cKamu tidak memiliki permission " + ADMIN + ".");
             return true;
         }
 
-        if (sub.equals("reload")) {
-            CdrVephilimEconomy.ReloadResult result = plugin.reloadRuntime();
-            sender.sendMessage((result.success() ? "§a" : "§c") + "[CVE] " + result.message());
-            return true;
-        }
-
-        if (sub.equals("status")) {
-            sender.sendMessage("§6[CVE] §f" + plugin.statusSummary());
-            sender.sendMessage("§6[CVE Governance] §f" + governance.statusSummary());
-            return true;
-        }
-
-        if (sub.equals("doctor")) {
-            DoctorService.Report report = plugin.runDoctor();
-            sender.sendMessage("§6[CVE Doctor] §fHealth diagnostics " + plugin.getDescription().getVersion());
-            for (DoctorService.Check check : report.checks()) {
-                String prefix = switch (check.level()) {
-                    case PASS -> "§a[PASS]";
-                    case WARN -> "§e[WARN]";
-                    case FAIL -> "§c[FAIL]";
-                };
-                sender.sendMessage(prefix + " §f" + check.name() + " §7- " + check.detail());
+        switch (sub) {
+            case "reload" -> {
+                CdrVephilimEconomy.ReloadResult result = plugin.reloadRuntime();
+                sender.sendMessage((result.success() ? "§a" : "§c") + "[CVE] " + result.message());
+                return true;
             }
-            String summaryColor = report.failCount() > 0 ? "§c" : report.warnCount() > 0 ? "§e" : "§a";
-            sender.sendMessage("§6[CVE Doctor] §fSummary: §a" + report.passCount() + " PASS §7| §e"
-                    + report.warnCount() + " WARN §7| §c" + report.failCount() + " FAIL §7| "
-                    + summaryColor + (report.healthy() ? "HEALTHY" : "ATTENTION REQUIRED"));
-            sender.sendMessage("§6[CVE Governance] §f" + governance.statusSummary());
-            return true;
+            case "status" -> {
+                sender.sendMessage("§6[CVE] §f" + plugin.statusSummary());
+                sender.sendMessage("§6[CVE Governance] §f" + governance.statusSummary());
+                sender.sendMessage("§6[CVE Approval] §f" + approvals.statusSummary());
+                return true;
+            }
+            case "doctor" -> {
+                DoctorService.Report report = plugin.runDoctor();
+                sender.sendMessage("§6[CVE Doctor] §fHealth diagnostics " + plugin.getDescription().getVersion());
+                for (DoctorService.Check check : report.checks()) {
+                    String prefix = switch (check.level()) {
+                        case PASS -> "§a[PASS]";
+                        case WARN -> "§e[WARN]";
+                        case FAIL -> "§c[FAIL]";
+                    };
+                    sender.sendMessage(prefix + " §f" + check.name() + " §7- " + check.detail());
+                }
+                String summaryColor = report.failCount() > 0 ? "§c" : report.warnCount() > 0 ? "§e" : "§a";
+                sender.sendMessage("§6[CVE Doctor] §fSummary: §a" + report.passCount() + " PASS §7| §e"
+                        + report.warnCount() + " WARN §7| §c" + report.failCount() + " FAIL §7| "
+                        + summaryColor + (report.healthy() ? "HEALTHY" : "ATTENTION REQUIRED"));
+                sender.sendMessage("§6[CVE Governance] §f" + governance.statusSummary());
+                sender.sendMessage("§6[CVE Approval] §f" + approvals.statusSummary());
+                return true;
+            }
+            case "safety" -> {
+                return handleSafety(sender, args);
+            }
+            default -> {
+                sender.sendMessage("§cSubcommand tidak dikenal. Gunakan /cve reload, /cve status, /cve doctor, /cve safety, /cve shop, atau /cve governance.");
+                return true;
+            }
         }
-
-        if (sub.equals("safety")) {
-            return handleSafety(sender, args);
-        }
-
-        sender.sendMessage("§cSubcommand tidak dikenal. Gunakan /cve reload, /cve status, /cve doctor, /cve safety, /cve shop, atau /cve governance.");
-        return true;
     }
 
     private boolean handleGovernance(CommandSender sender, String[] args) {
@@ -112,12 +117,12 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
             sendGovernanceHelp(sender);
             return true;
         }
-
         String action = args[1].toLowerCase(Locale.ROOT);
         switch (action) {
             case "status" -> {
                 if (!governance.canViewGovernance(sender)) return governanceDenied(sender);
                 sender.sendMessage("§6[CVE Governance] §f" + governance.statusSummary());
+                sender.sendMessage("§6[CVE Approval] §f" + approvals.statusSummary());
                 return true;
             }
             case "list" -> {
@@ -157,8 +162,74 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
                 send(sender, governance.reload());
                 return true;
             }
+            case "approval" -> {
+                return handleApproval(sender, args);
+            }
             default -> {
                 sendGovernanceHelp(sender);
+                return true;
+            }
+        }
+    }
+
+    private boolean handleApproval(CommandSender sender, String[] args) {
+        if (args.length < 3) {
+            sendApprovalHelp(sender);
+            return true;
+        }
+        String action = args[2].toLowerCase(Locale.ROOT);
+        switch (action) {
+            case "status" -> {
+                if (!approvals.canView(sender)) return governanceDenied(sender);
+                sender.sendMessage("§6[CVE Approval] §f" + approvals.statusSummary());
+                return true;
+            }
+            case "list" -> {
+                if (!approvals.canView(sender)) return governanceDenied(sender);
+                sender.sendMessage("§6[CVE Approval] §fPending/executing:");
+                approvals.listLines(sender).forEach(sender::sendMessage);
+                return true;
+            }
+            case "show" -> {
+                if (!approvals.canView(sender)) return governanceDenied(sender);
+                if (args.length < 4) return governanceUsage(sender, "/cve governance approval show <id>");
+                sender.sendMessage("§6[CVE Approval] §f" + approvals.describe(sender, args[3]));
+                return true;
+            }
+            case "approve" -> {
+                if (args.length < 4) return governanceUsage(sender, "/cve governance approval approve <id>");
+                send(sender, approvals.approve(sender, args[3]));
+                return true;
+            }
+            case "reject" -> {
+                if (args.length < 4) return governanceUsage(sender, "/cve governance approval reject <id> [reason]");
+                send(sender, approvals.reject(sender, args[3], join(args, 4)));
+                return true;
+            }
+            case "cancel" -> {
+                if (args.length < 4) return governanceUsage(sender, "/cve governance approval cancel <id>");
+                send(sender, approvals.cancel(sender, args[3]));
+                return true;
+            }
+            case "reload" -> {
+                if (!governance.canAdminGovernance(sender)) return governanceDenied(sender);
+                send(sender, approvals.reload());
+                return true;
+            }
+            case "recover" -> {
+                if (!governance.canAdminGovernance(sender)) return governanceDenied(sender);
+                if (args.length < 6 || !args[5].equalsIgnoreCase("CONFIRM")) {
+                    return governanceUsage(sender, "/cve governance approval recover <id> <executed|not-executed> CONFIRM");
+                }
+                boolean executed;
+                if (args[4].equalsIgnoreCase("executed")) executed = true;
+                else if (args[4].equalsIgnoreCase("not-executed")) executed = false;
+                else return governanceUsage(sender, "Recovery state harus executed atau not-executed.");
+                send(sender, approvals.recover(sender, args[3], executed));
+                return true;
+            }
+            default -> {
+                sendApprovalHelp(sender);
                 return true;
             }
         }
@@ -227,25 +298,22 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
             case "name" -> {
-                if (args.length < 3) return usage(sender, "/cve shop name <shop> <display name>");
-                if (!requireShop(sender, EDIT, GovernanceCapability.EDIT, args[2])) return true;
                 if (args.length < 4) return usage(sender, "/cve shop name <shop> <display name>");
+                if (!requireShop(sender, EDIT, GovernanceCapability.EDIT, args[2])) return true;
                 send(sender, service.setDisplayName(sender.getName(), args[2], join(args, 3)));
                 return true;
             }
             case "size" -> {
-                if (args.length < 3) return usage(sender, "/cve shop size <shop> <9|18|27|36|45|54>");
-                if (!requireShop(sender, EDIT, GovernanceCapability.EDIT, args[2])) return true;
                 if (args.length < 4) return usage(sender, "/cve shop size <shop> <9|18|27|36|45|54>");
+                if (!requireShop(sender, EDIT, GovernanceCapability.EDIT, args[2])) return true;
                 Integer size = parseInt(args[3]);
                 if (size == null) return invalidNumber(sender, args[3]);
                 send(sender, service.setSize(sender.getName(), args[2], size));
                 return true;
             }
             case "bind" -> {
-                if (args.length < 3) return usage(sender, "/cve shop bind <shop> <npc-id|-1>");
-                if (!requireShop(sender, BIND, GovernanceCapability.BIND, args[2])) return true;
                 if (args.length < 4) return usage(sender, "/cve shop bind <shop> <npc-id|-1>");
+                if (!requireShop(sender, BIND, GovernanceCapability.BIND, args[2])) return true;
                 Integer npcId = parseInt(args[3]);
                 if (npcId == null) return invalidNumber(sender, args[3]);
                 send(sender, service.bindNpc(sender.getName(), args[2], npcId));
@@ -258,18 +326,14 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
             case "manager" -> {
-                if (args.length < 3) return usage(sender, "/cve shop manager <shop> <name|none>");
-                if (!requireShop(sender, MANAGER, GovernanceCapability.MANAGER, args[2])) return true;
                 if (args.length < 4) return usage(sender, "/cve shop manager <shop> <name|none>");
+                if (!requireShop(sender, MANAGER, GovernanceCapability.MANAGER, args[2])) return true;
                 send(sender, service.setManager(sender.getName(), args[2], join(args, 3)));
                 return true;
             }
             case "additem" -> {
-                if (args.length < 3) return usage(sender, "/cve shop additem <shop> ...");
+                if (args.length < 11) return usage(sender, "/cve shop additem <shop> <listing> <material|hand> <slot> <mode> <buy> <sell> <initial> <max>");
                 if (!requireShop(sender, ITEM, GovernanceCapability.ITEM, args[2])) return true;
-                if (args.length < 11) {
-                    return usage(sender, "/cve shop additem <shop> <listing> <material|hand> <slot> <mode> <buy> <sell> <initial> <max>");
-                }
                 Material material = resolveMaterial(sender, args[4]);
                 if (material == null) {
                     sender.sendMessage("§cMaterial tidak valid atau item di tangan kosong.");
@@ -299,9 +363,8 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
             case "price" -> {
-                if (args.length < 4) return usage(sender, "/cve shop price <shop> <listing> <buy|sell> <value>");
-                if (!requireShop(sender, PRICE, GovernanceCapability.PRICE, args[2])) return true;
                 if (args.length < 6) return usage(sender, "/cve shop price <shop> <listing> <buy|sell> <value>");
+                if (!requireShop(sender, PRICE, GovernanceCapability.PRICE, args[2])) return true;
                 boolean buySide;
                 if (args[4].equalsIgnoreCase("buy")) buySide = true;
                 else if (args[4].equalsIgnoreCase("sell")) buySide = false;
@@ -318,34 +381,35 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
                 double before = buySide ? listing.buyPrice() : listing.sellPrice();
                 GovernanceService.Result guard = governance.validatePriceChange(sender, args[2], before, price);
                 if (!guard.success()) {
-                    sender.sendMessage("§c[CVE Governance] " + guard.message());
+                    if (isRoleOnly(sender, PRICE)) {
+                        send(sender, approvals.requestPrice(sender, args[2], args[3], buySide, before, price, guard.message()));
+                    } else {
+                        sender.sendMessage("§c[CVE Governance] " + guard.message());
+                    }
                     return true;
                 }
                 send(sender, service.setPrice(sender.getName(), args[2], args[3], buySide, price));
                 return true;
             }
             case "mode" -> {
-                if (args.length < 4) return usage(sender, "/cve shop mode <shop> <listing> <BUY|SELL|BUY_SELL>");
-                if (!requireShop(sender, ITEM, GovernanceCapability.ITEM, args[2])) return true;
                 if (args.length < 5) return usage(sender, "/cve shop mode <shop> <listing> <BUY|SELL|BUY_SELL>");
+                if (!requireShop(sender, ITEM, GovernanceCapability.ITEM, args[2])) return true;
                 ListingMode mode = parseMode(args[4]);
                 if (mode == null) return usage(sender, "Mode harus BUY, SELL, atau BUY_SELL.");
                 send(sender, service.setMode(sender.getName(), args[2], args[3], mode));
                 return true;
             }
             case "slot" -> {
-                if (args.length < 4) return usage(sender, "/cve shop slot <shop> <listing> <slot>");
-                if (!requireShop(sender, ITEM, GovernanceCapability.ITEM, args[2])) return true;
                 if (args.length < 5) return usage(sender, "/cve shop slot <shop> <listing> <slot>");
+                if (!requireShop(sender, ITEM, GovernanceCapability.ITEM, args[2])) return true;
                 Integer slot = parseInt(args[4]);
                 if (slot == null) return invalidNumber(sender, args[4]);
                 send(sender, service.setSlot(sender.getName(), args[2], args[3], slot));
                 return true;
             }
             case "initialstock", "maxstock" -> {
-                if (args.length < 4) return usage(sender, "/cve shop " + action + " <shop> <listing> <value>");
-                if (!requireShop(sender, STOCK, GovernanceCapability.STOCK_CONFIG, args[2])) return true;
                 if (args.length < 5) return usage(sender, "/cve shop " + action + " <shop> <listing> <value>");
+                if (!requireShop(sender, STOCK, GovernanceCapability.STOCK_CONFIG, args[2])) return true;
                 Integer value = parseInt(args[4]);
                 if (value == null) return invalidNumber(sender, args[4]);
                 ShopAdminService.Result result = action.equals("initialstock")
@@ -355,9 +419,8 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
             case "stock" -> {
-                if (args.length < 4) return usage(sender, "/cve shop stock <shop> <listing> <set|add|remove> <amount>");
-                if (!requireShop(sender, STOCK, GovernanceCapability.STOCK_RUNTIME, args[2])) return true;
                 if (args.length < 6) return usage(sender, "/cve shop stock <shop> <listing> <set|add|remove> <amount>");
+                if (!requireShop(sender, STOCK, GovernanceCapability.STOCK_RUNTIME, args[2])) return true;
                 ShopAdminService.StockOperation operation;
                 try {
                     operation = ShopAdminService.StockOperation.valueOf(args[4].toUpperCase(Locale.ROOT));
@@ -367,20 +430,21 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
                 Integer value = parseInt(args[5]);
                 if (value == null) return invalidNumber(sender, args[5]);
 
-                if (!sender.hasPermission(ADMIN) && !sender.hasPermission(STOCK)) {
+                if (isRoleOnly(sender, STOCK)) {
                     Optional<GovernanceService.Assignment> assignment = sender instanceof Player player
                             ? governance.assignmentFor(player.getUniqueId()) : Optional.empty();
                     if (assignment.isPresent() && assignment.get().role() != GovernanceRole.ROYAL_TREASURER) {
-                        if (operation == ShopAdminService.StockOperation.SET) {
-                            sender.sendMessage("§c[CVE Governance] SET runtime stock membutuhkan Royal Treasurer/admin. Staff/manager gunakan add/remove.");
-                            return true;
-                        }
                         long limit = assignment.get().role() == GovernanceRole.ECONOMY_STAFF
                                 ? plugin.getConfig().getLong("governance.limits.economy-staff.max-runtime-stock-delta", 128L)
                                 : plugin.getConfig().getLong("governance.limits.economy-manager.max-runtime-stock-delta", 1024L);
-                        if (value > Math.max(0L, limit)) {
-                            sender.sendMessage("§c[CVE Governance] Stock delta " + value + " melewati limit role "
-                                    + assignment.get().role() + " sebesar " + Math.max(0L, limit) + " per operasi.");
+                        limit = Math.max(0L, limit);
+                        boolean sensitive = operation == ShopAdminService.StockOperation.SET || value > limit;
+                        if (sensitive) {
+                            String reason = operation == ShopAdminService.StockOperation.SET
+                                    ? "Runtime stock SET membutuhkan approval role lebih tinggi."
+                                    : "Stock delta " + value + " melewati limit role " + assignment.get().role()
+                                    + " sebesar " + limit + " per operasi.";
+                            send(sender, approvals.requestStock(sender, args[2], args[3], operation, value, reason));
                             return true;
                         }
                     }
@@ -400,34 +464,44 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage("§6[CVE Safety] §f" + plugin.safetyStatusSummary());
             return true;
         }
-
         if (args[1].equalsIgnoreCase("unlock")) {
             if (args.length < 3 || !args[2].equalsIgnoreCase("CONFIRM")) {
                 sender.sendMessage("§c[CVE] Recovery tidak dijalankan. Setelah memeriksa saldo, item, stock, audit log, dan transaction ID, gunakan:");
                 sender.sendMessage("§e/cve safety unlock CONFIRM");
                 return true;
             }
-
             CdrVephilimEconomy.ReloadResult result = plugin.unlockSafety(sender.getName());
             sender.sendMessage((result.success() ? "§a" : "§c") + "[CVE Safety] " + result.message());
             return true;
         }
-
         sender.sendMessage("§cGunakan /cve safety status atau /cve safety unlock CONFIRM.");
         return true;
     }
 
     private void sendGovernanceHelp(CommandSender sender) {
-        sender.sendMessage("§6[CVE Governance] §fBeta.3 RC1 staff governance:");
+        sender.sendMessage("§6[CVE Governance] §fBeta.3 RC2 staff governance + sensitive approval:");
         sender.sendMessage("§e/cve governance status §7| §e/cve governance list §7| §e/cve governance who <player>");
+        sender.sendMessage("§e/cve governance approval <status|list|show|approve|reject|cancel>");
         if (governance.canAdminGovernance(sender)) {
             sender.sendMessage("§e/cve governance grant <player> <ECONOMY_STAFF|ECONOMY_MANAGER|ROYAL_TREASURER> <shop|*>");
             sender.sendMessage("§e/cve governance revoke <player> <shop|*|all> §7| §e/cve governance reload");
+            sender.sendMessage("§e/cve governance approval reload §7| §e/cve governance approval recover <id> <executed|not-executed> CONFIRM");
+        }
+    }
+
+    private void sendApprovalHelp(CommandSender sender) {
+        sender.sendMessage("§6[CVE Approval] §fSensitive change approval:");
+        sender.sendMessage("§e/cve governance approval status §7| §e/cve governance approval list");
+        sender.sendMessage("§e/cve governance approval show <id> §7| §e/cve governance approval approve <id>");
+        sender.sendMessage("§e/cve governance approval reject <id> [reason] §7| §e/cve governance approval cancel <id>");
+        if (governance.canAdminGovernance(sender)) {
+            sender.sendMessage("§e/cve governance approval reload");
+            sender.sendMessage("§e/cve governance approval recover <id> <executed|not-executed> CONFIRM");
         }
     }
 
     private void sendShopHelp(CommandSender sender) {
-        sender.sendMessage("§6[CVE Shop] §fBeta.3 RC1 management + governance scope:");
+        sender.sendMessage("§6[CVE Shop] §fBeta.3 RC2 management + approval guardrail:");
         sender.sendMessage("§e/cve shop list §7| §e/cve shop info <shop> §7| §e/cve shop schema §7| §e/cve shop validate");
         sender.sendMessage("§e/cve shop create <id> [size] [display name] §7| §e/cve shop delete <id> CONFIRM");
         sender.sendMessage("§e/cve shop name <shop> <display name> §7| §e/cve shop size <shop> <size>");
@@ -442,13 +516,16 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
 
     private boolean requireShop(CommandSender sender, String legacyPermission,
                                 GovernanceCapability capability, String shopId) {
-        if (governance.authorize(sender, legacyPermission, capability, shopId)) {
-            return true;
-        }
+        if (governance.authorize(sender, legacyPermission, capability, shopId)) return true;
         String scope = shopId == null ? "assigned shop" : shopId;
         sender.sendMessage("§c[CVE Governance] Akses ditolak. Dibutuhkan permission " + legacyPermission
                 + " atau role governance dengan capability " + capability + " pada scope " + scope + ".");
         return false;
+    }
+
+    private boolean isRoleOnly(CommandSender sender, String legacyPermission) {
+        return !sender.hasPermission(ADMIN) && !sender.hasPermission(legacyPermission)
+                && sender instanceof Player player && governance.assignmentFor(player.getUniqueId()).isPresent();
     }
 
     private static Material resolveMaterial(CommandSender sender, String raw) {
@@ -508,6 +585,10 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage((result.success() ? "§a" : "§c") + "[CVE Governance] " + result.message());
     }
 
+    private static void send(CommandSender sender, GovernanceApprovalService.Result result) {
+        sender.sendMessage((result.success() ? "§a" : "§c") + "[CVE Approval] " + result.message());
+    }
+
     private static boolean usage(CommandSender sender, String message) {
         sender.sendMessage("§e[CVE Shop] " + message);
         return true;
@@ -540,22 +621,13 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
                 addIfStarts(result, "safety", input);
             }
             if (hasAnyShopAccess(sender)) addIfStarts(result, "shop", input);
-            if (governance.canViewGovernance(sender)) addIfStarts(result, "governance", input);
+            if (governance.canViewGovernance(sender) || approvals.canView(sender)) addIfStarts(result, "governance", input);
             return result;
         }
-
-        if (args[0].equalsIgnoreCase("shop")) {
-            return completeShop(sender, args);
-        }
-        if (args[0].equalsIgnoreCase("governance")) {
-            return completeGovernance(sender, args);
-        }
-
+        if (args[0].equalsIgnoreCase("shop")) return completeShop(sender, args);
+        if (args[0].equalsIgnoreCase("governance")) return completeGovernance(sender, args);
         if (!hasAdmin(sender)) return Collections.emptyList();
-
-        if (args.length == 2 && args[0].equalsIgnoreCase("safety")) {
-            return matches(args[1], List.of("status", "unlock"));
-        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("safety")) return matches(args[1], List.of("status", "unlock"));
         if (args.length == 3 && args[0].equalsIgnoreCase("safety") && args[1].equalsIgnoreCase("unlock")) {
             return matches(args[2], List.of("CONFIRM"));
         }
@@ -563,15 +635,38 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
     }
 
     private List<String> completeGovernance(CommandSender sender, String[] args) {
-        if (!governance.canViewGovernance(sender)) return Collections.emptyList();
+        if (!governance.canViewGovernance(sender) && !approvals.canView(sender)) return Collections.emptyList();
         if (args.length == 2) {
-            List<String> actions = new ArrayList<>(List.of("status", "list", "who"));
+            List<String> actions = new ArrayList<>(List.of("status", "list", "who", "approval"));
             if (governance.canAdminGovernance(sender)) {
                 actions.add("grant");
                 actions.add("revoke");
                 actions.add("reload");
             }
             return matches(args[1], actions);
+        }
+        if (args[1].equalsIgnoreCase("approval")) {
+            if (args.length == 3) {
+                List<String> actions = new ArrayList<>(List.of("status", "list", "show", "approve", "reject", "cancel"));
+                if (governance.canAdminGovernance(sender)) {
+                    actions.add("reload");
+                    actions.add("recover");
+                }
+                return matches(args[2], actions);
+            }
+            if (args.length == 4 && List.of("show", "approve", "reject", "cancel").contains(args[2].toLowerCase(Locale.ROOT))) {
+                return matches(args[3], approvals.visibleIds(sender, false));
+            }
+            if (args.length == 4 && args[2].equalsIgnoreCase("recover") && governance.canAdminGovernance(sender)) {
+                return matches(args[3], approvals.visibleIds(sender, true));
+            }
+            if (args.length == 5 && args[2].equalsIgnoreCase("recover")) {
+                return matches(args[4], List.of("executed", "not-executed"));
+            }
+            if (args.length == 6 && args[2].equalsIgnoreCase("recover")) {
+                return matches(args[5], List.of("CONFIRM"));
+            }
+            return Collections.emptyList();
         }
         if (args.length == 4 && args[1].equalsIgnoreCase("grant") && governance.canAdminGovernance(sender)) {
             return matches(args[3], List.of("ECONOMY_STAFF", "ECONOMY_MANAGER", "ROYAL_TREASURER"));
@@ -605,7 +700,6 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
             if (canAnyScoped(sender, STOCK, GovernanceCapability.STOCK_RUNTIME)) { actions.add("initialstock"); actions.add("maxstock"); actions.add("stock"); }
             return matches(args[1], actions);
         }
-
         if (args.length >= 3) {
             String action = args[1].toLowerCase(Locale.ROOT);
             if (args.length == 3 && !action.equals("create") && !action.equals("list")
