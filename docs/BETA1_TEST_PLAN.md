@@ -2,6 +2,8 @@
 
 Dokumen ini dipakai sebelum `beta.1` dianggap siap dipasang sebagai build uji Vephilim Roleplay.
 
+Target build saat ini: `0.1.0-beta.1-RC1`.
+
 ## Prasyarat
 
 - Paper 1.21.11 / Java 21.
@@ -19,6 +21,14 @@ Dokumen ini dipakai sebelum `beta.1` dianggap siap dipasang sebagai build uji Ve
 5. Restart server untuk beta.1 (belum ada runtime reload).
 6. Klik kanan NPC dan pastikan GUI shop terbuka.
 
+## Startup Diagnostics
+
+- [ ] Console menampilkan version RC1 saat plugin enable.
+- [ ] Console menampilkan jumlah shop, shop enabled, NPC binding, listing, stock entry, dan rejected definition.
+- [ ] Jika tidak ada active NPC binding, plugin tetap enable tetapi memberi warning yang jelas.
+- [ ] Vault economy provider yang dipakai tercetak di console.
+- [ ] Nilai transaction guard efektif (cooldown, bulk, max amount, NPC distance) tercetak di console.
+
 ## Functional Tests
 
 ### NPC-only access
@@ -28,6 +38,13 @@ Dokumen ini dipakai sebelum `beta.1` dianggap siap dipasang sebagai build uji Ve
 - [ ] Tidak ada `/shop` atau command shop player.
 - [ ] Setelah GUI terbuka, player yang berjalan/teleport melewati `npc.max-transaction-distance` tidak dapat bertransaksi.
 - [ ] GUI ditutup jika NPC binding tidak ada, NPC despawn, world berbeda, atau player terlalu jauh saat klik transaksi.
+
+### GUI feedback
+
+- [ ] GUI menampilkan nama item, stock, saldo player, harga beli/jual, dan jumlah bulk efektif.
+- [ ] Listing BUY dengan stock 0 menampilkan status `STOK HABIS`.
+- [ ] Listing SELL dengan stock mencapai `max-stock` menampilkan status `STOK PEDAGANG PENUH`.
+- [ ] Setelah transaksi sukses, GUI refresh dan saldo/stock yang tampil berubah sesuai transaksi.
 
 ### BUY
 
@@ -82,14 +99,16 @@ Dokumen ini dipakai sebelum `beta.1` dianggap siap dipasang sebagai build uji Ve
 
 ## Stock Persistence / Recovery
 
+- [ ] First boot menghasilkan `stock.yml`, `stock.yml.bak`, dan `stock.yml.initialized`.
 - [ ] Setiap persist menghasilkan `stock.yml` yang memiliki `meta.schema` dan `meta.updated-at`.
-- [ ] `stock.yml.bak` dibuat sebagai recovery snapshot.
+- [ ] `stock.yml.bak` dapat dipakai sebagai recovery snapshot.
 - [ ] Setelah transaksi sukses, nilai pada `stock.yml` sesuai nilai runtime.
 - [ ] Temporary snapshot diverifikasi sebelum menggantikan file utama.
 - [ ] Restart normal tidak mengubah stock yang sudah tersimpan.
 - [ ] Jika `stock.yml` rusak secara sintaks YAML, plugin memulihkan dari `stock.yml.bak`.
 - [ ] Jika `stock.yml` hilang tetapi backup valid tersedia, plugin memulihkan file utama dari backup.
 - [ ] Jika file utama dan backup sama-sama invalid/tidak dapat dipercaya, plugin disable daripada diam-diam memakai `initial-stock`.
+- [ ] Setelah storage pernah diinisialisasi, hapus `stock.yml`, backup, dan temp tetapi biarkan `stock.yml.initialized`: plugin wajib fail-closed dan tidak bootstrap ulang supply.
 - [ ] Stock numerik di bawah 0 di-clamp ke 0 dan snapshot diperbaiki.
 - [ ] Stock numerik di atas `max-stock` di-clamp ke `max-stock` dan snapshot diperbaiki.
 - [ ] Stock non-integer/string pada listing valid tidak digunakan sebagai stock runtime dan dinormalisasi ke `initial-stock`.
@@ -107,14 +126,17 @@ Dokumen ini dipakai sebelum `beta.1` dianggap siap dipasang sebagai build uji Ve
 - [ ] Mengaktifkan `audit.discord.include-rejected` membuat `REJECTED` ikut dikirim ke Discord.
 - [ ] Webhook URL tidak pernah ditulis ke console/audit log.
 
-## Restart / Failure Tests
+## Restart / Shutdown Tests
 
 - [ ] Tutup GUI tanpa transaksi: tidak ada perubahan stock/saldo.
 - [ ] Player disconnect setelah transaksi selesai: data tetap konsisten.
 - [ ] Restart normal melakukan flush stock tanpa error.
+- [ ] Saat plugin/server disable, semua GUI CdrVephilimEconomy yang masih terbuka ditutup.
+- [ ] Shutdown log mengonfirmasi stock snapshot berhasil di-flush.
+- [ ] Enable kembali setelah shutdown bersih mempertahankan saldo dan stock terakhir.
 - [ ] Simulasikan `stock.yml` corrupt dengan backup valid: recovery berhasil dan startup log memberi warning recovery.
 - [ ] Simulasikan `stock.yml` dan backup corrupt: plugin fail-closed/disable dan tidak menghasilkan stock reset diam-diam.
 
 ## Exit Criteria beta.1
 
-`beta.1` baru dianggap lulus jika jalur BUY/SELL utama, NPC-only proximity guard, persistence/recovery stock, config validation, audit trail, dan skenario anti-dupe di atas lolos di server uji. Fitur governance, admin GUI, dynamic pricing, dan market event tetap di luar scope beta.1.
+`beta.1` baru dianggap lulus jika jalur BUY/SELL utama, NPC-only proximity guard, persistence/recovery stock, config validation, audit trail, clean shutdown, dan skenario anti-dupe di atas lolos di server uji. Fitur governance, admin GUI, dynamic pricing, dan market event tetap di luar scope beta.1.
