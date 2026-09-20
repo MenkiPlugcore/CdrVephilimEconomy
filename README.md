@@ -4,24 +4,23 @@
 
 ## Status
 
-- **Current development:** `0.1.0-beta.3-RC1`
+- **Current development:** `0.1.0-beta.3-RC2`
 - **Frozen Shop Management baseline:** `0.1.0-beta.2`
 - **Frozen Core Economy baseline:** `0.1.0-beta.1`
 - Branch development aktif: `dev/beta.3`
 
-beta.3 RC1 membuka **Economy Staff & Governance** tanpa mengubah transaction safety foundation beta.1/beta.2.
+beta.3 RC1 membuka role/scope Economy Staff. RC2 menambahkan **sensitive-change approval** dengan hierarchy reviewer, expiry, anti-self-approval, durable execution evidence, dan fail-closed recovery.
 
 ## Core Economy
 
-- NPC Citizens sebagai front-end transaksi.
+- Citizens NPC sebagai front-end transaksi.
 - BUY / SELL / BUY_SELL per listing.
-- Persistent real stock.
-- Static pricing.
+- Persistent real stock dan static pricing.
 - Vault economy bridge.
 - Transaction journal + persistent safety lock.
 - Fail-closed recovery untuk stock/pending transaction.
 - Local/Discord transaction audit.
-- `/cve doctor`, `/cve safety status`, dan explicit recovery.
+- `/cve doctor`, `/cve safety status`, explicit recovery.
 
 ## Shop Management beta.2
 
@@ -50,9 +49,9 @@ beta.3 RC1 membuka **Economy Staff & Governance** tanpa mengubah transaction saf
 
 Shop management memakai `shops.yml` schema v2, candidate validation, backup, admin mutation journal, local administrative audit, dan optional Discord administrative audit.
 
-## beta.3 RC1 — Economy Staff & Governance
+## beta.3 — Economy Staff & Governance
 
-Tiga role internal tersedia:
+Role internal:
 
 ```text
 ECONOMY_STAFF
@@ -60,7 +59,7 @@ ECONOMY_MANAGER
 ROYAL_TREASURER
 ```
 
-Assignment disimpan berdasarkan UUID dan dapat dibatasi ke satu atau beberapa shop.
+Assignment berbasis UUID dan dibatasi per shop scope atau `*`.
 
 ```text
 /cve governance status
@@ -71,42 +70,13 @@ Assignment disimpan berdasarkan UUID dan dapat dibatasi ke satu atau beberapa sh
 /cve governance reload
 ```
 
-Contoh:
+`ECONOMY_STAFF` dapat view, edit price, dan add/remove runtime stock pada scope. `ECONOMY_MANAGER` menambah capability bind/toggle/layout/listing/stock config/manager metadata. `ROYAL_TREASURER` memiliki seluruh capability governance termasuk create/delete.
 
-```text
-/cve governance grant Raka ECONOMY_STAFF blacksmith
-/cve governance grant Raka ECONOMY_STAFF farmer
-/cve governance grant Menki ROYAL_TREASURER *
-```
+Permission beta.2 tetap backward compatible dan dianggap explicit operator override.
 
-Role tidak menghapus permission beta.2. Permission lama tetap backward compatible dan dianggap explicit operator override.
+## RC2 Sensitive-Change Approval
 
-## Role Capabilities
-
-`ECONOMY_STAFF`:
-- view management diagnostics;
-- edit price pada shop scope;
-- add/remove runtime stock pada shop scope.
-
-`ECONOMY_MANAGER`:
-- seluruh capability Staff;
-- bind/unbind NPC;
-- enable/disable shop;
-- edit display name/size;
-- listing CRUD/mode/slot;
-- initial/max stock config;
-- manager metadata.
-
-`ROYAL_TREASURER`:
-- seluruh capability governance;
-- create/delete shop;
-- price/stock guardrail role tidak membatasi Treasurer.
-
-Scope `*` berarti global.
-
-## RC1 Guardrails
-
-Default `config.yml`:
+Default role guardrail:
 
 ```yaml
 governance:
@@ -117,15 +87,69 @@ governance:
     economy-manager:
       max-price-change-percent: 50.0
       max-runtime-stock-delta: 1024
+
+  approval:
+    enabled: true
+    expiry-minutes: 10
+    max-pending-per-requester: 5
 ```
 
 Untuk role-only Staff/Manager:
-- perubahan harga dibatasi per operasi;
-- perubahan harga dari basis `0` membutuhkan Treasurer/admin;
-- runtime stock hanya `add/remove` sesuai delta limit;
-- runtime stock `SET` membutuhkan Royal Treasurer/admin atau explicit beta.2 permission.
 
-RC1 belum memiliki rolling quota atau approval queue. Itu menjadi target RC berikutnya.
+- perubahan harga di dalam limit langsung dieksekusi;
+- harga di atas limit menjadi approval request;
+- perubahan harga dari base `0` menjadi approval request;
+- ADD/REMOVE runtime stock di dalam limit langsung dieksekusi;
+- delta stock di atas limit menjadi approval request;
+- runtime stock `SET` selalu menjadi approval request.
+
+Treasurer/admin/permission beta.2 eksplisit tetap dapat direct mutation.
+
+## Approval Commands
+
+```text
+/cve governance approval status
+/cve governance approval list
+/cve governance approval show <id>
+/cve governance approval approve <id>
+/cve governance approval reject <id> [reason]
+/cve governance approval cancel <id>
+/cve governance approval reload
+/cve governance approval recover <id> <executed|not-executed> CONFIRM
+```
+
+Reviewer hierarchy:
+
+- Manager dapat review request Staff pada scope yang sama.
+- Treasurer dapat review request Staff/Manager pada scope yang sama.
+- role peer/lower tidak dapat approve.
+- requester tidak dapat approve/reject request sendiri.
+- requester dapat cancel request sendiri.
+- `cdrvephilimeconomy.governance.approve` memberi reviewer override tanpa hak grant/revoke.
+
+## Durable Approval Recovery
+
+Approval disimpan di:
+
+```text
+governance-approvals.yml
+governance-approvals.yml.bak
+governance-approvals.yml.tmp
+```
+
+Sebelum mutation approved dipanggil, state dipersist menjadi `EXECUTING`. Jika server crash pada window tersebut, subsystem approval masuk `recoveryBlocked=true` dan **tidak replay mutation otomatis**.
+
+Admin harus memeriksa shop/stock/admin audit, lalu menandai hasil rekonsiliasi:
+
+```text
+/cve governance approval recover <id> executed CONFIRM
+```
+
+atau:
+
+```text
+/cve governance approval recover <id> not-executed CONFIRM
+```
 
 ## Governance Persistence
 
@@ -135,7 +159,7 @@ governance.yml.bak
 governance.yml.tmp
 ```
 
-`governance.yml` schema v1 ditulis dengan temporary validation dan atomic replace bila filesystem mendukung. Governance storage corrupt membuat akses berbasis role fail-closed, tetapi owner dengan `cdrvephilimeconomy.admin` tetap dapat melakukan recovery.
+Governance role storage dan approval storage sama-sama memakai strict YAML validation dan temporary + atomic replace bila filesystem mendukung.
 
 ## Permissions
 
@@ -155,10 +179,11 @@ cdrvephilimeconomy.shop.stock
 cdrvephilimeconomy.shop.manager
 ```
 
-New beta.3:
+beta.3:
 
 ```text
 cdrvephilimeconomy.governance.view
+cdrvephilimeconomy.governance.approve
 cdrvephilimeconomy.governance.admin
 ```
 
@@ -166,18 +191,20 @@ cdrvephilimeconomy.governance.admin
 
 ## Audit
 
-Governance grant/revoke memakai administrative audit beta.2:
+Grant/revoke dan approval memakai `logs/admin-audit.log`. Jika Discord administrative audit aktif, event governance/approval juga dikirim async melalui sink yang sama.
+
+Approval event utama:
 
 ```text
-GOVERNANCE_GRANT_REQUEST
-GOVERNANCE_GRANT_SUCCESS
-GOVERNANCE_GRANT_FAILED
-GOVERNANCE_REVOKE_REQUEST
-GOVERNANCE_REVOKE_SUCCESS
-GOVERNANCE_REVOKE_FAILED
+GOV_APPROVAL_REQUEST
+GOV_APPROVAL_APPROVE_REQUEST
+GOV_APPROVAL_EXECUTE_SUCCESS
+GOV_APPROVAL_EXECUTE_FAILED
+GOV_APPROVAL_REJECTED
+GOV_APPROVAL_CANCELLED
+GOV_APPROVAL_EXPIRED
+GOV_APPROVAL_RECOVERY_RESOLVED
 ```
-
-Jika Discord administrative audit aktif, event governance juga dikirim async melalui sink yang sama.
 
 ## Integrasi
 
@@ -193,12 +220,13 @@ Jika Discord administrative audit aktif, event governance juga dikirim async mel
 - [`docs/BETA1_FINAL.md`](docs/BETA1_FINAL.md)
 - [`docs/BETA2_FINAL.md`](docs/BETA2_FINAL.md)
 - [`docs/BETA3_RC1.md`](docs/BETA3_RC1.md)
+- [`docs/BETA3_RC2.md`](docs/BETA3_RC2.md)
 - [`docs/BETA3_TEST_PLAN.md`](docs/BETA3_TEST_PLAN.md)
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - [`docs/ECONOMY_DESIGN.md`](docs/ECONOMY_DESIGN.md)
 
 ## Next beta.3 Update
 
-Setelah RC1 role/scope regression aman, update berikutnya adalah **sensitive-change approval workflow**: request/approve/reject, threshold perubahan besar, expiry, anti-self-approval, dan durable approval evidence.
+Setelah RC2 QA aman, update berikutnya diarahkan ke **rolling governance quota + cooldown** dan kemungkinan **two-person approval** untuk perubahan paling sensitif sebelum final regression/security pass beta.3.
 
 Plugin dikembangkan oleh **MenkiPlugcore** untuk **Vephilim Roleplay**.
