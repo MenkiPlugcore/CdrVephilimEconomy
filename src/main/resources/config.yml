@@ -51,15 +51,25 @@ admin-audit:
 governance:
   limits:
     economy-staff:
-      # Maksimal perubahan buy/sell price per satu operasi dibanding harga saat ini.
+      # Perubahan di atas limit tidak lagi hard-denied pada RC2; plugin membuat approval request.
       max-price-change-percent: 20.0
-      # Staff hanya dapat add/remove runtime stock; SET memerlukan Royal Treasurer/admin.
+      # ADD/REMOVE di atas limit masuk approval queue. SET selalu approval untuk Staff/Manager.
       max-runtime-stock-delta: 128
 
     economy-manager:
       max-price-change-percent: 50.0
-      # Manager hanya dapat add/remove runtime stock; SET memerlukan Royal Treasurer/admin.
       max-runtime-stock-delta: 1024
+
+  approval:
+    # Sensitive-change approval queue. Royal Treasurer/admin tetap dapat melakukan mutation langsung.
+    enabled: true
+
+    # Request PENDING otomatis menjadi EXPIRED setelah durasi ini.
+    # Safety clamp internal 1-1440 menit.
+    expiry-minutes: 10
+
+    # Mencegah satu staff memenuhi queue dengan request aktif.
+    max-pending-per-requester: 5
 
 messages:
   prefix: "<dark_gray>[<gold>Vephilim Economy</gold>]</dark_gray> "
