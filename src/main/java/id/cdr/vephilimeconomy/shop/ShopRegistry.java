@@ -2,9 +2,11 @@ package id.cdr.vephilimeconomy.shop;
 
 import org.bukkit.Material;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -21,16 +23,21 @@ public final class ShopRegistry {
     private final Map<Integer, Shop> shopsByNpcId = new LinkedHashMap<>();
     private int rejectedDefinitions;
 
-    public void load(File file, Logger logger) {
+    public void load(File file, Logger logger) throws IOException {
         shopsById.clear();
         shopsByNpcId.clear();
         rejectedDefinitions = 0;
 
-        YamlConfiguration yaml = YamlConfiguration.loadConfiguration(file);
+        YamlConfiguration yaml = new YamlConfiguration();
+        try {
+            yaml.load(file);
+        } catch (InvalidConfigurationException exception) {
+            throw new IOException("Invalid YAML in shops.yml: " + exception.getMessage(), exception);
+        }
+
         ConfigurationSection root = yaml.getConfigurationSection("shops");
         if (root == null) {
-            logger.warning("shops.yml tidak memiliki section 'shops'. Tidak ada shop yang dimuat.");
-            return;
+            throw new IOException("shops.yml tidak memiliki section 'shops'.");
         }
 
         for (String rawShopId : root.getKeys(false)) {
