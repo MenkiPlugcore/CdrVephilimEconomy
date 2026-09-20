@@ -97,6 +97,53 @@ public final class StockRepository {
         cleanupStaleTemp();
     }
 
+    public synchronized void reconcile(ShopRegistry registry) throws IOException {
+        Map<String, Integer> previous = new HashMap<>(stocks);
+        Map<String, Integer> next = new HashMap<>();
+        int added = 0;
+        int removed = 0;
+        int clamped = 0;
+
+        for (Shop shop : registry.all()) {
+            for (ShopListing listing : shop.listings().values()) {
+                String key = key(shop.id(), listing.id());
+                Integer existing = previous.get(key);
+                int value;
+                if (existing == null) {
+                    value = listing.initialStock();
+                    added++;
+                } else {
+                    value = Math.max(0, Math.min(listing.maxStock(), existing));
+                    if (value != existing) {
+                        clamped++;
+                    }
+                }
+                next.put(key, value);
+            }
+        }
+
+        for (String key : previous.keySet()) {
+            if (!next.containsKey(key)) {
+                removed++;
+            }
+        }
+
+        stocks.clear();
+        stocks.putAll(next);
+        try {
+            persist();
+            ensureInitializedMarker();
+            cleanupStaleTemp();
+            logger.info("Runtime stock reconcile selesai: entries=" + stocks.size()
+                    + ", added=" + added + ", removed=" + removed + ", clamped=" + clamped + ".");
+        } catch (IOException exception) {
+            stocks.clear();
+            stocks.putAll(previous);
+            cleanupStaleTemp();
+            throw exception;
+        }
+    }
+
     public synchronized int getStock(String shopId, String listingId) {
         return stocks.getOrDefault(key(shopId, listingId), 0);
     }
