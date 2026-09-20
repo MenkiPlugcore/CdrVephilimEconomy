@@ -34,8 +34,8 @@ audit:
     # FAILED/internal error tetap dikirim saat Discord audit aktif.
     include-rejected: false
 
-# beta.2 administrative audit terpisah dari transaction audit.
-# Local admin audit selalu menjadi bukti utama/fail-closed untuk mutation shop.
+# Administrative audit terpisah dari transaction audit.
+# Local admin audit selalu menjadi bukti utama/fail-closed untuk mutation shop/governance.
 admin-audit:
   discord:
     enabled: false
@@ -44,6 +44,80 @@ admin-audit:
     # REQUEST bisa sangat ramai. SUCCESS/FAILED/REJECTED tetap dikirim
     # saat Discord admin audit aktif walaupun opsi ini false.
     include-requests: false
+
+# beta.3 Economy Staff & Governance.
+# Permission beta.2 tetap didukung dan menjadi explicit bypass untuk role guardrail.
+# Staff yang hanya mendapat role internal CdrVephilimEconomy dibatasi oleh nilai berikut.
+governance:
+  limits:
+    economy-staff:
+      # Perubahan di atas limit membuat approval request.
+      max-price-change-percent: 20.0
+      # ADD/REMOVE di atas limit masuk approval queue. SET selalu approval untuk Staff/Manager.
+      max-runtime-stock-delta: 128
+
+    economy-manager:
+      max-price-change-percent: 50.0
+      max-runtime-stock-delta: 1024
+
+  approval:
+    # Sensitive-change approval queue. Royal Treasurer/admin tetap dapat melakukan mutation langsung.
+    enabled: true
+
+    # Request PENDING otomatis menjadi EXPIRED setelah durasi ini.
+    # Safety clamp internal 1-1440 menit.
+    expiry-minutes: 10
+
+    # Mencegah satu staff memenuhi queue dengan request aktif.
+    max-pending-per-requester: 5
+
+    # RC4: perubahan yang sangat besar membutuhkan dua reviewer berbeda.
+    # Review pertama hanya mencatat durable attestation; mutation baru berjalan pada review kedua.
+    two-person:
+      enabled: true
+
+      # Absolute perubahan harga >= threshold ini dianggap extreme.
+      # Contoh 100 -> 200 = 100% dan membutuhkan dua reviewer.
+      price-change-percent-threshold: 100.0
+
+      # Harga dari basis 0 tidak punya persentase yang aman, sehingga default dianggap extreme.
+      price-from-zero-requires-two: true
+
+      # ADD/REMOVE stock dengan delta >= threshold ini dianggap extreme.
+      stock-delta-threshold: 4096
+
+      # Runtime stock SET adalah mutation berisiko tinggi dan default membutuhkan dua reviewer.
+      stock-set-requires-two: true
+
+      # Dari dua reviewer, minimal satu harus Royal Treasurer, governance admin, atau full admin.
+      # Permission governance.approve saja tidak dianggap senior.
+      require-at-least-one-senior-reviewer: true
+
+  quota:
+    # RC3 rolling quota untuk mutation role-only yang masih berada di bawah limit per operasi.
+    # Permission beta.2 eksplisit, full admin, dan Royal Treasurer tidak dibatasi quota ini.
+    enabled: true
+
+    # Event lama dibuang dari memory setelah retention ini. File dipadatkan pada write berikutnya.
+    # Safety clamp internal 1-720 jam.
+    retention-hours: 48
+
+    economy-staff:
+      # Total direct mutation dihitung dalam rolling window, bukan reset per jam kalender.
+      window-minutes: 60
+      # Jumlah absolut persen perubahan harga yang boleh dieksekusi langsung dalam window.
+      # Contoh 20% + 20% = 40 quota points meskipun harga compounding.
+      max-price-percent-sum: 40.0
+      # Total ADD/REMOVE runtime stock direct dalam window.
+      max-stock-delta-sum: 256
+      # Cooldown global antar direct price/stock mutation role-only.
+      cooldown-seconds: 15
+
+    economy-manager:
+      window-minutes: 60
+      max-price-percent-sum: 100.0
+      max-stock-delta-sum: 4096
+      cooldown-seconds: 5
 
 messages:
   prefix: "<dark_gray>[<gold>Vephilim Economy</gold>]</dark_gray> "

@@ -1,5 +1,5 @@
 name: CdrVephilimEconomy
-version: '0.1.0-beta.2'
+version: '0.1.0-beta.3'
 main: id.cdr.vephilimeconomy.CdrVephilimEconomy
 api-version: '1.21.11'
 authors: [MenkiPlugcore]
@@ -9,8 +9,8 @@ depend: [Citizens, Vault]
 
 commands:
   cve:
-    description: Administrative command for CdrVephilimEconomy.
-    usage: /cve <reload|status|doctor|safety|shop>
+    description: Administrative and economy governance command for CdrVephilimEconomy.
+    usage: /cve <reload|status|doctor|safety|shop|governance>
     aliases: [veconomy]
 
 permissions:
@@ -28,6 +28,9 @@ permissions:
       cdrvephilimeconomy.shop.price: true
       cdrvephilimeconomy.shop.stock: true
       cdrvephilimeconomy.shop.manager: true
+      cdrvephilimeconomy.governance.view: true
+      cdrvephilimeconomy.governance.approve: true
+      cdrvephilimeconomy.governance.admin: true
 
   cdrvephilimeconomy.shop.view:
     description: View shop list, details, schema, and validation status.
@@ -59,3 +62,13 @@ permissions:
   cdrvephilimeconomy.shop.manager:
     description: Set shop responsibility metadata.
     default: false
+
+  cdrvephilimeconomy.governance.view:
+    description: View economy governance assignments and approval evidence.
+    default: false
+  cdrvephilimeconomy.governance.approve:
+    description: Review sensitive-change approvals without grant/revoke authority.
+    default: false
+  cdrvephilimeconomy.governance.admin:
+    description: Grant, revoke, reload, and recover economy governance state.
+    default: op
