@@ -5,12 +5,14 @@ import id.cdr.vephilimeconomy.economy.EconomyBridge;
 import id.cdr.vephilimeconomy.economy.VaultEconomyBridge;
 import id.cdr.vephilimeconomy.gui.ShopGuiListener;
 import id.cdr.vephilimeconomy.gui.ShopGuiService;
+import id.cdr.vephilimeconomy.gui.ShopInventoryHolder;
 import id.cdr.vephilimeconomy.npc.CitizensNpcListener;
 import id.cdr.vephilimeconomy.shop.ShopRegistry;
 import id.cdr.vephilimeconomy.storage.StockRepository;
 import id.cdr.vephilimeconomy.transaction.PlayerTransactionStateListener;
 import id.cdr.vephilimeconomy.transaction.TransactionService;
 import net.milkbowl.vault.economy.Economy;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -20,6 +22,7 @@ import java.io.IOException;
 public final class CdrVephilimEconomy extends JavaPlugin {
     private StockRepository stockRepository;
     private AuditService auditService;
+    private TransactionService transactionService;
 
     @Override
     public void onEnable() {
@@ -69,7 +72,7 @@ public final class CdrVephilimEconomy extends JavaPlugin {
         long cooldownMillis = Math.max(0L, getConfig().getLong("transaction.cooldown-ms", 250L));
         double maxNpcDistance = clamp(getConfig().getDouble("npc.max-transaction-distance", 6.0D), 1.0D, 32.0D);
 
-        TransactionService transactions = new TransactionService(
+        transactionService = new TransactionService(
                 economy,
                 stockRepository,
                 auditService,
@@ -80,40 +83,71 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                 auditBusyRejected
         );
 
-        ShopGuiService gui = new ShopGuiService(stockRepository, economy);
+        ShopGuiService gui = new ShopGuiService(stockRepository, economy, bulkAmount);
         getServer().getPluginManager().registerEvents(new CitizensNpcListener(shopRegistry, gui), this);
         getServer().getPluginManager().registerEvents(
                 new ShopGuiListener(
                         this,
                         shopRegistry,
                         gui,
-                        transactions,
+                        transactionService,
                         economy,
                         bulkAmount,
                         maxNpcDistance
                 ),
                 this
         );
-        getServer().getPluginManager().registerEvents(new PlayerTransactionStateListener(transactions), this);
+        getServer().getPluginManager().registerEvents(new PlayerTransactionStateListener(transactionService), this);
 
-        getLogger().info("CdrVephilimEconomy beta.1 core enabled: NPC-only shop, static pricing, stock, guarded transactions, audit.");
+        getLogger().info("CdrVephilimEconomy " + getDescription().getVersion()
+                + " enabled: NPC-only shop, static pricing, persistent stock, guarded transactions, audit.");
+        getLogger().info("Startup diagnostics: shops=" + shopRegistry.shopCount()
+                + ", enabled=" + shopRegistry.enabledShopCount()
+                + ", npcBindings=" + shopRegistry.activeBindingCount()
+                + ", listings=" + shopRegistry.listingCount()
+                + ", stockEntries=" + stockRepository.entryCount()
+                + ", rejectedDefinitions=" + shopRegistry.rejectedDefinitionCount() + ".");
         getLogger().info("Transaction guard: cooldown=" + cooldownMillis + "ms, bulk=" + bulkAmount
                 + ", max=" + maxAmount + ", npcDistance=" + maxNpcDistance + ".");
         getLogger().info("Audit policy: rejected=" + auditRejected + ", busyRejected=" + auditBusyRejected
                 + ", discordIncludeRejected=" + discordIncludeRejected + ".");
+
+        if (shopRegistry.activeBindingCount() == 0) {
+            getLogger().warning("Tidak ada active NPC binding. Plugin aktif, tetapi player belum dapat melakukan transaksi sampai npc-id di shops.yml diisi dan shop di-enable.");
+        }
     }
 
     @Override
     public void onDisable() {
+        closeOpenShopInventories();
+
+        if (transactionService != null) {
+            transactionService.clearState();
+            transactionService = null;
+        }
+
         if (stockRepository != null) {
             try {
                 stockRepository.flush();
+                getLogger().info("Stock snapshot berhasil di-flush saat shutdown.");
             } catch (IOException exception) {
                 getLogger().severe("Gagal flush stock saat shutdown: " + exception.getMessage());
+            } finally {
+                stockRepository = null;
             }
         }
+
         if (auditService != null) {
             auditService.close();
+            auditService = null;
+        }
+    }
+
+    private void closeOpenShopInventories() {
+        for (Player player : getServer().getOnlinePlayers()) {
+            if (player.getOpenInventory().getTopInventory().getHolder() instanceof ShopInventoryHolder) {
+                player.closeInventory();
+            }
         }
     }
 
