@@ -5,6 +5,9 @@ import id.cdr.vephilimeconomy.admin.ShopAdminService;
 import id.cdr.vephilimeconomy.diagnostic.DoctorService;
 import id.cdr.vephilimeconomy.governance.GovernanceApprovalService;
 import id.cdr.vephilimeconomy.governance.GovernanceCapability;
+import id.cdr.vephilimeconomy.governance.GovernanceDualApprovalService;
+import id.cdr.vephilimeconomy.governance.GovernanceQuotaCommandListener;
+import id.cdr.vephilimeconomy.governance.GovernanceQuotaLedger;
 import id.cdr.vephilimeconomy.governance.GovernanceRole;
 import id.cdr.vephilimeconomy.governance.GovernanceService;
 import id.cdr.vephilimeconomy.shop.ListingMode;
@@ -40,18 +43,38 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
     private final CdrVephilimEconomy plugin;
     private final GovernanceService governance;
     private final GovernanceApprovalService approvals;
+    private final GovernanceQuotaLedger quota;
+    private final GovernanceDualApprovalService dualApprovals;
 
     public CveCommand(CdrVephilimEconomy plugin) {
         this.plugin = plugin;
+
         this.governance = new GovernanceService(plugin, plugin.adminAuditService());
-        GovernanceService.Result loaded = governance.load();
-        if (!loaded.success()) {
-            plugin.getLogger().severe("Beta.3 governance runtime tidak sehat: " + loaded.message());
+        GovernanceService.Result governanceLoaded = governance.load();
+        if (!governanceLoaded.success()) {
+            plugin.getLogger().severe("Beta.3 governance runtime tidak sehat: " + governanceLoaded.message());
         }
+
         this.approvals = new GovernanceApprovalService(plugin, governance);
         GovernanceApprovalService.Result approvalLoaded = approvals.load();
         if (!approvalLoaded.success()) {
             plugin.getLogger().severe("Beta.3 approval runtime tidak sehat: " + approvalLoaded.message());
+        }
+
+        this.quota = new GovernanceQuotaLedger(plugin, plugin.adminAuditService());
+        GovernanceQuotaLedger.Result quotaLoaded = quota.load();
+        if (!quotaLoaded.success()) {
+            plugin.getLogger().severe("Beta.3 quota runtime tidak sehat: " + quotaLoaded.message());
+        }
+        // RC3 quota guard must actually be registered. An unhealthy ledger is still
+        // registered so role-only direct mutations fail closed instead of bypassing quota.
+        plugin.getServer().getPluginManager().registerEvents(
+                new GovernanceQuotaCommandListener(plugin, governance, quota), plugin);
+
+        this.dualApprovals = new GovernanceDualApprovalService(plugin, governance);
+        GovernanceDualApprovalService.Result dualLoaded = dualApprovals.load();
+        if (!dualLoaded.success()) {
+            plugin.getLogger().severe("Beta.3 dual approval runtime tidak sehat: " + dualLoaded.message());
         }
     }
 
@@ -79,8 +102,7 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
             }
             case "status" -> {
                 sender.sendMessage("§6[CVE] §f" + plugin.statusSummary());
-                sender.sendMessage("§6[CVE Governance] §f" + governance.statusSummary());
-                sender.sendMessage("§6[CVE Approval] §f" + approvals.statusSummary());
+                sendGovernanceStatus(sender);
                 return true;
             }
             case "doctor" -> {
@@ -98,8 +120,7 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
                 sender.sendMessage("§6[CVE Doctor] §fSummary: §a" + report.passCount() + " PASS §7| §e"
                         + report.warnCount() + " WARN §7| §c" + report.failCount() + " FAIL §7| "
                         + summaryColor + (report.healthy() ? "HEALTHY" : "ATTENTION REQUIRED"));
-                sender.sendMessage("§6[CVE Governance] §f" + governance.statusSummary());
-                sender.sendMessage("§6[CVE Approval] §f" + approvals.statusSummary());
+                sendGovernanceStatus(sender);
                 return true;
             }
             case "safety" -> {
@@ -112,6 +133,13 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
         }
     }
 
+    private void sendGovernanceStatus(CommandSender sender) {
+        sender.sendMessage("§6[CVE Governance] §f" + governance.statusSummary());
+        sender.sendMessage("§6[CVE Approval] §f" + approvals.statusSummary());
+        sender.sendMessage("§6[CVE Quota] §f" + quota.statusSummary());
+        sender.sendMessage("§6[CVE DualApproval] §f" + dualApprovals.statusSummary());
+    }
+
     private boolean handleGovernance(CommandSender sender, String[] args) {
         if (args.length == 1) {
             sendGovernanceHelp(sender);
@@ -120,9 +148,8 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
         String action = args[1].toLowerCase(Locale.ROOT);
         switch (action) {
             case "status" -> {
-                if (!governance.canViewGovernance(sender)) return governanceDenied(sender);
-                sender.sendMessage("§6[CVE Governance] §f" + governance.statusSummary());
-                sender.sendMessage("§6[CVE Approval] §f" + approvals.statusSummary());
+                if (!governance.canViewGovernance(sender) && !approvals.canView(sender)) return governanceDenied(sender);
+                sendGovernanceStatus(sender);
                 return true;
             }
             case "list" -> {
@@ -135,6 +162,8 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
                 if (!governance.canViewGovernance(sender)) return governanceDenied(sender);
                 if (args.length < 3) return governanceUsage(sender, "/cve governance who <player>");
                 sender.sendMessage("§6[CVE Governance] §f" + governance.describe(args[2]));
+                governance.assignmentFor(args[2]).ifPresent(assignment ->
+                        sender.sendMessage("§6[CVE Quota] §f" + quota.describe(assignment.uuid(), assignment.role())));
                 return true;
             }
             case "grant" -> {
@@ -160,6 +189,8 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
             case "reload" -> {
                 if (!governance.canAdminGovernance(sender)) return governanceDenied(sender);
                 send(sender, governance.reload());
+                send(sender, quota.load());
+                send(sender, dualApprovals.reload());
                 return true;
             }
             case "approval" -> {
@@ -182,6 +213,7 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
             case "status" -> {
                 if (!approvals.canView(sender)) return governanceDenied(sender);
                 sender.sendMessage("§6[CVE Approval] §f" + approvals.statusSummary());
+                sender.sendMessage("§6[CVE DualApproval] §f" + dualApprovals.statusSummary());
                 return true;
             }
             case "list" -> {
@@ -194,26 +226,43 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
                 if (!approvals.canView(sender)) return governanceDenied(sender);
                 if (args.length < 4) return governanceUsage(sender, "/cve governance approval show <id>");
                 sender.sendMessage("§6[CVE Approval] §f" + approvals.describe(sender, args[3]));
+                sender.sendMessage("§6[CVE DualApproval] §f" + dualApprovals.describe(args[3]));
                 return true;
             }
             case "approve" -> {
                 if (args.length < 4) return governanceUsage(sender, "/cve governance approval approve <id>");
-                send(sender, approvals.approve(sender, args[3]));
+                GovernanceDualApprovalService.Gate gate = dualApprovals.preApprove(sender, args[3]);
+                if (gate.decision() == GovernanceDualApprovalService.GateDecision.BLOCKED) {
+                    sender.sendMessage("§c[CVE DualApproval] " + gate.message());
+                    return true;
+                }
+                if (gate.decision() == GovernanceDualApprovalService.GateDecision.FIRST_REVIEW_RECORDED) {
+                    sender.sendMessage("§e[CVE DualApproval] " + gate.message());
+                    return true;
+                }
+                GovernanceApprovalService.Result result = approvals.approve(sender, args[3]);
+                send(sender, result);
+                dualApprovals.afterApprovalAttempt(args[3]);
                 return true;
             }
             case "reject" -> {
                 if (args.length < 4) return governanceUsage(sender, "/cve governance approval reject <id> [reason]");
-                send(sender, approvals.reject(sender, args[3], join(args, 4)));
+                GovernanceApprovalService.Result result = approvals.reject(sender, args[3], join(args, 4));
+                send(sender, result);
+                dualApprovals.afterTerminalAction(args[3]);
                 return true;
             }
             case "cancel" -> {
                 if (args.length < 4) return governanceUsage(sender, "/cve governance approval cancel <id>");
-                send(sender, approvals.cancel(sender, args[3]));
+                GovernanceApprovalService.Result result = approvals.cancel(sender, args[3]);
+                send(sender, result);
+                dualApprovals.afterTerminalAction(args[3]);
                 return true;
             }
             case "reload" -> {
                 if (!governance.canAdminGovernance(sender)) return governanceDenied(sender);
                 send(sender, approvals.reload());
+                send(sender, dualApprovals.reload());
                 return true;
             }
             case "recover" -> {
@@ -225,7 +274,9 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
                 if (args[4].equalsIgnoreCase("executed")) executed = true;
                 else if (args[4].equalsIgnoreCase("not-executed")) executed = false;
                 else return governanceUsage(sender, "Recovery state harus executed atau not-executed.");
-                send(sender, approvals.recover(sender, args[3], executed));
+                GovernanceApprovalService.Result result = approvals.recover(sender, args[3], executed);
+                send(sender, result);
+                dualApprovals.afterTerminalAction(args[3]);
                 return true;
             }
             default -> {
@@ -332,7 +383,9 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
             case "additem" -> {
-                if (args.length < 11) return usage(sender, "/cve shop additem <shop> <listing> <material|hand> <slot> <mode> <buy> <sell> <initial> <max>");
+                if (args.length < 11) {
+                    return usage(sender, "/cve shop additem <shop> <listing> <material|hand> <slot> <mode> <buy> <sell> <initial> <max>");
+                }
                 if (!requireShop(sender, ITEM, GovernanceCapability.ITEM, args[2])) return true;
                 Material material = resolveMaterial(sender, args[4]);
                 if (material == null) {
@@ -479,7 +532,7 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
     }
 
     private void sendGovernanceHelp(CommandSender sender) {
-        sender.sendMessage("§6[CVE Governance] §fBeta.3 RC2 staff governance + sensitive approval:");
+        sender.sendMessage("§6[CVE Governance] §fBeta.3 RC4 governance + approval security:");
         sender.sendMessage("§e/cve governance status §7| §e/cve governance list §7| §e/cve governance who <player>");
         sender.sendMessage("§e/cve governance approval <status|list|show|approve|reject|cancel>");
         if (governance.canAdminGovernance(sender)) {
@@ -490,7 +543,7 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
     }
 
     private void sendApprovalHelp(CommandSender sender) {
-        sender.sendMessage("§6[CVE Approval] §fSensitive change approval:");
+        sender.sendMessage("§6[CVE Approval] §fSensitive change approval + RC4 two-person guard:");
         sender.sendMessage("§e/cve governance approval status §7| §e/cve governance approval list");
         sender.sendMessage("§e/cve governance approval show <id> §7| §e/cve governance approval approve <id>");
         sender.sendMessage("§e/cve governance approval reject <id> [reason] §7| §e/cve governance approval cancel <id>");
@@ -501,7 +554,7 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
     }
 
     private void sendShopHelp(CommandSender sender) {
-        sender.sendMessage("§6[CVE Shop] §fBeta.3 RC2 management + approval guardrail:");
+        sender.sendMessage("§6[CVE Shop] §fBeta.3 RC4 management + governance guardrail:");
         sender.sendMessage("§e/cve shop list §7| §e/cve shop info <shop> §7| §e/cve shop schema §7| §e/cve shop validate");
         sender.sendMessage("§e/cve shop create <id> [size] [display name] §7| §e/cve shop delete <id> CONFIRM");
         sender.sendMessage("§e/cve shop name <shop> <display name> §7| §e/cve shop size <shop> <size>");
@@ -587,6 +640,14 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
 
     private static void send(CommandSender sender, GovernanceApprovalService.Result result) {
         sender.sendMessage((result.success() ? "§a" : "§c") + "[CVE Approval] " + result.message());
+    }
+
+    private static void send(CommandSender sender, GovernanceQuotaLedger.Result result) {
+        sender.sendMessage((result.success() ? "§a" : "§c") + "[CVE Quota] " + result.message());
+    }
+
+    private static void send(CommandSender sender, GovernanceDualApprovalService.Result result) {
+        sender.sendMessage((result.success() ? "§a" : "§c") + "[CVE DualApproval] " + result.message());
     }
 
     private static boolean usage(CommandSender sender, String message) {
@@ -688,16 +749,22 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
     private List<String> completeShop(CommandSender sender, String[] args) {
         if (args.length == 2) {
             List<String> actions = new ArrayList<>();
-            if (can(sender, VIEW, GovernanceCapability.VIEW, null)) { actions.add("list"); actions.add("info"); actions.add("schema"); actions.add("validate"); }
+            if (can(sender, VIEW, GovernanceCapability.VIEW, null)) {
+                actions.add("list"); actions.add("info"); actions.add("schema"); actions.add("validate");
+            }
             if (can(sender, CREATE, GovernanceCapability.CREATE, "*")) actions.add("create");
             if (canAnyScoped(sender, DELETE, GovernanceCapability.DELETE)) actions.add("delete");
             if (canAnyScoped(sender, EDIT, GovernanceCapability.EDIT)) { actions.add("name"); actions.add("size"); }
             if (canAnyScoped(sender, BIND, GovernanceCapability.BIND)) actions.add("bind");
             if (canAnyScoped(sender, TOGGLE, GovernanceCapability.TOGGLE)) { actions.add("enable"); actions.add("disable"); }
             if (canAnyScoped(sender, MANAGER, GovernanceCapability.MANAGER)) actions.add("manager");
-            if (canAnyScoped(sender, ITEM, GovernanceCapability.ITEM)) { actions.add("additem"); actions.add("removeitem"); actions.add("mode"); actions.add("slot"); }
+            if (canAnyScoped(sender, ITEM, GovernanceCapability.ITEM)) {
+                actions.add("additem"); actions.add("removeitem"); actions.add("mode"); actions.add("slot");
+            }
             if (canAnyScoped(sender, PRICE, GovernanceCapability.PRICE)) actions.add("price");
-            if (canAnyScoped(sender, STOCK, GovernanceCapability.STOCK_RUNTIME)) { actions.add("initialstock"); actions.add("maxstock"); actions.add("stock"); }
+            if (canAnyScoped(sender, STOCK, GovernanceCapability.STOCK_RUNTIME)) {
+                actions.add("initialstock"); actions.add("maxstock"); actions.add("stock");
+            }
             return matches(args[1], actions);
         }
         if (args.length >= 3) {
