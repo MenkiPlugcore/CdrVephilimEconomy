@@ -1,6 +1,7 @@
 package id.cdr.vephilimeconomy;
 
 import id.cdr.vephilimeconomy.audit.AuditService;
+import id.cdr.vephilimeconomy.command.CveCommand;
 import id.cdr.vephilimeconomy.economy.EconomyBridge;
 import id.cdr.vephilimeconomy.economy.VaultEconomyBridge;
 import id.cdr.vephilimeconomy.gui.ShopGuiListener;
@@ -12,7 +13,9 @@ import id.cdr.vephilimeconomy.storage.StockRepository;
 import id.cdr.vephilimeconomy.transaction.PlayerTransactionStateListener;
 import id.cdr.vephilimeconomy.transaction.TransactionService;
 import net.milkbowl.vault.economy.Economy;
+import org.bukkit.command.PluginCommand;
 import org.bukkit.entity.Player;
+import org.bukkit.event.HandlerList;
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -20,28 +23,40 @@ import java.io.File;
 import java.io.IOException;
 
 public final class CdrVephilimEconomy extends JavaPlugin {
+    private EconomyBridge economy;
+    private ShopRegistry shopRegistry;
     private StockRepository stockRepository;
     private AuditService auditService;
     private TransactionService transactionService;
+    private ShopGuiService guiService;
+    private CitizensNpcListener citizensNpcListener;
+    private ShopGuiListener shopGuiListener;
+    private PlayerTransactionStateListener transactionStateListener;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
         ensureResource("shops.yml");
 
-        EconomyBridge economy = setupEconomy();
+        economy = setupEconomy();
         if (economy == null) {
             getLogger().severe("Vault ditemukan, tetapi tidak ada economy provider yang terdaftar. Plugin dinonaktifkan.");
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
 
-        ShopRegistry shopRegistry = new ShopRegistry();
-        shopRegistry.load(new File(getDataFolder(), "shops.yml"), getLogger());
+        ShopRegistry initialRegistry = new ShopRegistry();
+        try {
+            initialRegistry.load(new File(getDataFolder(), "shops.yml"), getLogger());
+        } catch (IOException exception) {
+            getLogger().severe("Gagal memuat shops.yml secara aman: " + exception.getMessage());
+            getServer().getPluginManager().disablePlugin(this);
+            return;
+        }
 
         stockRepository = new StockRepository(new File(getDataFolder(), "stock.yml"), getLogger());
         try {
-            stockRepository.load(shopRegistry);
+            stockRepository.load(initialRegistry);
         } catch (IOException exception) {
             getLogger().severe("Gagal memuat persistent stock secara aman: " + exception.getMessage());
             getLogger().severe("Plugin dinonaktifkan untuk mencegah reset/dupe stock yang tidak terdeteksi.");
@@ -49,77 +64,31 @@ public final class CdrVephilimEconomy extends JavaPlugin {
             return;
         }
 
-        boolean auditRejected = getConfig().getBoolean("audit.log-rejected-transactions", true);
-        boolean auditBusyRejected = getConfig().getBoolean("audit.log-busy-rejections", false);
-        boolean discordIncludeRejected = getConfig().getBoolean("audit.discord.include-rejected", false);
-
         try {
-            auditService = new AuditService(
-                    this,
-                    getConfig().getBoolean("audit.local-enabled", true),
-                    getConfig().getBoolean("audit.discord.enabled", false),
-                    discordIncludeRejected,
-                    getConfig().getString("audit.discord.webhook-url", "")
-            );
+            installRuntime(initialRegistry, readSettings());
         } catch (IOException exception) {
-            getLogger().severe("Gagal membuka audit log: " + exception.getMessage());
+            getLogger().severe("Gagal menyiapkan runtime economy: " + exception.getMessage());
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
 
-        int maxAmount = clamp(getConfig().getInt("transaction.max-amount", 64), 1, 2304);
-        int bulkAmount = clamp(getConfig().getInt("transaction.bulk-amount", 16), 1, maxAmount);
-        long cooldownMillis = Math.max(0L, getConfig().getLong("transaction.cooldown-ms", 250L));
-        double maxNpcDistance = clamp(getConfig().getDouble("npc.max-transaction-distance", 6.0D), 1.0D, 32.0D);
-
-        transactionService = new TransactionService(
-                economy,
-                stockRepository,
-                auditService,
-                getLogger(),
-                cooldownMillis,
-                maxAmount,
-                auditRejected,
-                auditBusyRejected
-        );
-
-        ShopGuiService gui = new ShopGuiService(stockRepository, economy, bulkAmount);
-        getServer().getPluginManager().registerEvents(new CitizensNpcListener(shopRegistry, gui), this);
-        getServer().getPluginManager().registerEvents(
-                new ShopGuiListener(
-                        this,
-                        shopRegistry,
-                        gui,
-                        transactionService,
-                        economy,
-                        bulkAmount,
-                        maxNpcDistance
-                ),
-                this
-        );
-        getServer().getPluginManager().registerEvents(new PlayerTransactionStateListener(transactionService), this);
-
-        getLogger().info("CdrVephilimEconomy " + getDescription().getVersion()
-                + " enabled: NPC-only shop, static pricing, persistent stock, guarded transactions, audit.");
-        getLogger().info("Startup diagnostics: shops=" + shopRegistry.shopCount()
-                + ", enabled=" + shopRegistry.enabledShopCount()
-                + ", npcBindings=" + shopRegistry.activeBindingCount()
-                + ", listings=" + shopRegistry.listingCount()
-                + ", stockEntries=" + stockRepository.entryCount()
-                + ", rejectedDefinitions=" + shopRegistry.rejectedDefinitionCount() + ".");
-        getLogger().info("Transaction guard: cooldown=" + cooldownMillis + "ms, bulk=" + bulkAmount
-                + ", max=" + maxAmount + ", npcDistance=" + maxNpcDistance + ".");
-        getLogger().info("Audit policy: rejected=" + auditRejected + ", busyRejected=" + auditBusyRejected
-                + ", discordIncludeRejected=" + discordIncludeRejected + ".");
-
-        if (shopRegistry.activeBindingCount() == 0) {
-            getLogger().warning("Tidak ada active NPC binding. Plugin aktif, tetapi player belum dapat melakukan transaksi sampai npc-id di shops.yml diisi dan shop di-enable.");
+        PluginCommand command = getCommand("cve");
+        if (command == null) {
+            getLogger().severe("Command /cve tidak terdaftar di plugin.yml. Plugin dinonaktifkan.");
+            getServer().getPluginManager().disablePlugin(this);
+            return;
         }
+        CveCommand commandHandler = new CveCommand(this);
+        command.setExecutor(commandHandler);
+        command.setTabCompleter(commandHandler);
+
+        logDiagnostics("Startup");
     }
 
     @Override
     public void onDisable() {
         closeOpenShopInventories();
+        unregisterRuntimeListeners();
 
         if (transactionService != null) {
             transactionService.clearState();
@@ -140,6 +109,208 @@ public final class CdrVephilimEconomy extends JavaPlugin {
         if (auditService != null) {
             auditService.close();
             auditService = null;
+        }
+
+        shopRegistry = null;
+        guiService = null;
+        economy = null;
+    }
+
+    public synchronized ReloadResult reloadRuntime() {
+        if (!isEnabled() || stockRepository == null || economy == null) {
+            return new ReloadResult(false, "Plugin belum berada pada runtime state yang dapat direload.");
+        }
+
+        ShopRegistry candidate = new ShopRegistry();
+        try {
+            candidate.load(new File(getDataFolder(), "shops.yml"), getLogger());
+        } catch (IOException exception) {
+            return new ReloadResult(false, "shops.yml tidak valid: " + exception.getMessage());
+        }
+
+        if (candidate.rejectedDefinitionCount() > 0) {
+            return new ReloadResult(false, "Reload dibatalkan karena ada "
+                    + candidate.rejectedDefinitionCount() + " definisi shop yang ditolak. Runtime lama tetap aktif.");
+        }
+
+        reloadConfig();
+        RuntimeSettings settings = readSettings();
+
+        AuditService newAudit;
+        try {
+            newAudit = createAuditService(settings);
+        } catch (IOException exception) {
+            return new ReloadResult(false, "Audit service baru gagal dibuka: " + exception.getMessage());
+        }
+
+        TransactionService newTransactions = createTransactionService(newAudit, settings);
+        ShopGuiService newGui = new ShopGuiService(stockRepository, economy, settings.bulkAmount());
+        CitizensNpcListener newCitizensListener = new CitizensNpcListener(candidate, newGui);
+        ShopGuiListener newGuiListener = new ShopGuiListener(
+                this,
+                candidate,
+                newGui,
+                newTransactions,
+                economy,
+                settings.bulkAmount(),
+                settings.maxNpcDistance()
+        );
+        PlayerTransactionStateListener newStateListener = new PlayerTransactionStateListener(newTransactions);
+
+        try {
+            stockRepository.reconcile(candidate);
+        } catch (IOException exception) {
+            newAudit.close();
+            return new ReloadResult(false, "Stock reconcile gagal. Runtime lama tetap aktif: " + exception.getMessage());
+        }
+
+        closeOpenShopInventories();
+
+        getServer().getPluginManager().registerEvents(newCitizensListener, this);
+        getServer().getPluginManager().registerEvents(newGuiListener, this);
+        getServer().getPluginManager().registerEvents(newStateListener, this);
+
+        unregisterRuntimeListeners();
+
+        if (transactionService != null) {
+            transactionService.clearState();
+        }
+        if (auditService != null) {
+            auditService.close();
+        }
+
+        shopRegistry = candidate;
+        auditService = newAudit;
+        transactionService = newTransactions;
+        guiService = newGui;
+        citizensNpcListener = newCitizensListener;
+        shopGuiListener = newGuiListener;
+        transactionStateListener = newStateListener;
+
+        logDiagnostics("Reload");
+        return new ReloadResult(true, "Reload aman selesai. Restart server tidak diperlukan.");
+    }
+
+    public String statusSummary() {
+        if (shopRegistry == null || stockRepository == null) {
+            return "runtime belum siap";
+        }
+        return "version=" + getDescription().getVersion()
+                + ", shops=" + shopRegistry.shopCount()
+                + ", enabled=" + shopRegistry.enabledShopCount()
+                + ", npcBindings=" + shopRegistry.activeBindingCount()
+                + ", listings=" + shopRegistry.listingCount()
+                + ", stockEntries=" + stockRepository.entryCount();
+    }
+
+    private void installRuntime(ShopRegistry registry, RuntimeSettings settings) throws IOException {
+        AuditService newAudit = createAuditService(settings);
+        TransactionService newTransactions = createTransactionService(newAudit, settings);
+        ShopGuiService newGui = new ShopGuiService(stockRepository, economy, settings.bulkAmount());
+        CitizensNpcListener newCitizensListener = new CitizensNpcListener(registry, newGui);
+        ShopGuiListener newGuiListener = new ShopGuiListener(
+                this,
+                registry,
+                newGui,
+                newTransactions,
+                economy,
+                settings.bulkAmount(),
+                settings.maxNpcDistance()
+        );
+        PlayerTransactionStateListener newStateListener = new PlayerTransactionStateListener(newTransactions);
+
+        getServer().getPluginManager().registerEvents(newCitizensListener, this);
+        getServer().getPluginManager().registerEvents(newGuiListener, this);
+        getServer().getPluginManager().registerEvents(newStateListener, this);
+
+        shopRegistry = registry;
+        auditService = newAudit;
+        transactionService = newTransactions;
+        guiService = newGui;
+        citizensNpcListener = newCitizensListener;
+        shopGuiListener = newGuiListener;
+        transactionStateListener = newStateListener;
+    }
+
+    private AuditService createAuditService(RuntimeSettings settings) throws IOException {
+        return new AuditService(
+                this,
+                settings.localAuditEnabled(),
+                settings.discordAuditEnabled(),
+                settings.discordIncludeRejected(),
+                settings.webhookUrl()
+        );
+    }
+
+    private TransactionService createTransactionService(AuditService audit, RuntimeSettings settings) {
+        return new TransactionService(
+                economy,
+                stockRepository,
+                audit,
+                getLogger(),
+                settings.cooldownMillis(),
+                settings.maxAmount(),
+                settings.auditRejected(),
+                settings.auditBusyRejected()
+        );
+    }
+
+    private RuntimeSettings readSettings() {
+        int maxAmount = clamp(getConfig().getInt("transaction.max-amount", 64), 1, 2304);
+        int bulkAmount = clamp(getConfig().getInt("transaction.bulk-amount", 16), 1, maxAmount);
+        long cooldownMillis = Math.max(0L, getConfig().getLong("transaction.cooldown-ms", 250L));
+        double maxNpcDistance = clamp(getConfig().getDouble("npc.max-transaction-distance", 6.0D), 1.0D, 32.0D);
+
+        return new RuntimeSettings(
+                maxAmount,
+                bulkAmount,
+                cooldownMillis,
+                maxNpcDistance,
+                getConfig().getBoolean("audit.log-rejected-transactions", true),
+                getConfig().getBoolean("audit.log-busy-rejections", false),
+                getConfig().getBoolean("audit.local-enabled", true),
+                getConfig().getBoolean("audit.discord.enabled", false),
+                getConfig().getBoolean("audit.discord.include-rejected", false),
+                getConfig().getString("audit.discord.webhook-url", "")
+        );
+    }
+
+    private void logDiagnostics(String phase) {
+        if (shopRegistry == null || stockRepository == null) {
+            return;
+        }
+        RuntimeSettings settings = readSettings();
+        getLogger().info("CdrVephilimEconomy " + getDescription().getVersion()
+                + " " + phase.toLowerCase() + ": NPC-only shop, static pricing, persistent stock, guarded transactions, audit.");
+        getLogger().info(phase + " diagnostics: shops=" + shopRegistry.shopCount()
+                + ", enabled=" + shopRegistry.enabledShopCount()
+                + ", npcBindings=" + shopRegistry.activeBindingCount()
+                + ", listings=" + shopRegistry.listingCount()
+                + ", stockEntries=" + stockRepository.entryCount()
+                + ", rejectedDefinitions=" + shopRegistry.rejectedDefinitionCount() + ".");
+        getLogger().info("Transaction guard: cooldown=" + settings.cooldownMillis() + "ms, bulk=" + settings.bulkAmount()
+                + ", max=" + settings.maxAmount() + ", npcDistance=" + settings.maxNpcDistance() + ".");
+        getLogger().info("Audit policy: rejected=" + settings.auditRejected()
+                + ", busyRejected=" + settings.auditBusyRejected()
+                + ", discordIncludeRejected=" + settings.discordIncludeRejected() + ".");
+
+        if (shopRegistry.activeBindingCount() == 0) {
+            getLogger().warning("Tidak ada active NPC binding. Isi npc-id dan enabled di shops.yml lalu gunakan /cve reload.");
+        }
+    }
+
+    private void unregisterRuntimeListeners() {
+        if (citizensNpcListener != null) {
+            HandlerList.unregisterAll(citizensNpcListener);
+            citizensNpcListener = null;
+        }
+        if (shopGuiListener != null) {
+            HandlerList.unregisterAll(shopGuiListener);
+            shopGuiListener = null;
+        }
+        if (transactionStateListener != null) {
+            HandlerList.unregisterAll(transactionStateListener);
+            transactionStateListener = null;
         }
     }
 
@@ -176,5 +347,22 @@ public final class CdrVephilimEconomy extends JavaPlugin {
             return min;
         }
         return Math.max(min, Math.min(max, value));
+    }
+
+    public record ReloadResult(boolean success, String message) {
+    }
+
+    private record RuntimeSettings(
+            int maxAmount,
+            int bulkAmount,
+            long cooldownMillis,
+            double maxNpcDistance,
+            boolean auditRejected,
+            boolean auditBusyRejected,
+            boolean localAuditEnabled,
+            boolean discordAuditEnabled,
+            boolean discordIncludeRejected,
+            String webhookUrl
+    ) {
     }
 }
