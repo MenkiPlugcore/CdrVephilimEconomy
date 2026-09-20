@@ -1,15 +1,16 @@
 # CdrVephilimEconomy
 
-`CdrVephilimEconomy` adalah plugin economy khusus **Vephilim Roleplay** dengan pendekatan NPC-first: player berdagang melalui Citizens NPC, sedangkan plugin menangani stock, harga, transaksi, recovery, audit, dan governance.
+`CdrVephilimEconomy` adalah plugin economy khusus **Vephilim Roleplay** dengan pendekatan NPC-first: player berdagang melalui Citizens NPC, sedangkan plugin menangani stock, harga, transaksi, recovery, audit, shop management, dan governance staff.
 
 ## Status
 
-- **Current development:** `0.1.0-beta.3-RC4`
+- **Current stable development baseline:** `0.1.0-beta.3`
+- **Frozen Governance baseline:** `0.1.0-beta.3`
 - **Frozen Shop Management baseline:** `0.1.0-beta.2`
 - **Frozen Core Economy baseline:** `0.1.0-beta.1`
-- Branch development aktif: `dev/beta.3`
+- Branch development: `dev/beta.3`
 
-beta.3 RC1 membuka role/scope Economy Staff. RC2 menambahkan **sensitive-change approval**. RC3 menambahkan **rolling quota + cooldown anti-abuse**. RC4 menambahkan **two-person approval untuk perubahan ekstrem** dan memastikan quota RC3 benar-benar terpasang pada runtime command path.
+beta.3 sudah ditutup sebagai baseline governance setelah RC1 role/scope, RC2 sensitive-change approval, RC3 rolling quota + cooldown, dan RC4 two-person approval + final security hardening.
 
 ## Core Economy
 
@@ -59,7 +60,7 @@ ECONOMY_MANAGER
 ROYAL_TREASURER
 ```
 
-Assignment berbasis UUID dan dibatasi per shop scope atau `*`.
+Assignment governance berbasis UUID dan dibatasi per shop scope atau `*`.
 
 ```text
 /cve governance status
@@ -94,15 +95,7 @@ governance:
     max-pending-per-requester: 5
 ```
 
-Untuk role-only Staff/Manager:
-- perubahan harga di dalam limit dapat direct mutation;
-- harga di atas limit menjadi approval request;
-- perubahan harga dari base `0` menjadi approval request;
-- ADD/REMOVE runtime stock di dalam limit dapat direct mutation;
-- delta stock di atas limit menjadi approval request;
-- runtime stock `SET` menjadi approval request.
-
-Approval commands:
+Perubahan role-only yang melewati limit menjadi durable approval request. Requester tidak dapat approve/reject request sendiri. Approval memakai `EXECUTING` evidence sebelum mutation sehingga crash tidak membuat request direplay otomatis.
 
 ```text
 /cve governance approval status
@@ -115,11 +108,9 @@ Approval commands:
 /cve governance approval recover <id> <executed|not-executed> CONFIRM
 ```
 
-Requester tidak dapat approve/reject request sendiri. Approval memakai durable `EXECUTING` evidence sebelum mutation untuk mencegah replay ambigu setelah crash.
+## Rolling Governance Quota
 
-## RC3 Rolling Governance Quota
-
-Direct mutation kecil dibatasi secara kumulatif:
+Direct mutation kecil tetap dibatasi secara kumulatif:
 
 ```yaml
 governance:
@@ -140,11 +131,11 @@ governance:
       cooldown-seconds: 5
 ```
 
-Quota reservation dipersist **sebelum** direct role mutation. Jika ledger corrupt/unwritable, direct role-only price/stock mutation diblokir fail-closed. RC4 juga memperbaiki wiring runtime sehingga `GovernanceQuotaCommandListener` benar-benar diregistrasikan pada startup plugin.
+Quota reservation dipersist sebelum direct role mutation. Jika ledger corrupt/unwritable, direct role-only price/stock mutation diblokir fail-closed. `GovernanceQuotaCommandListener` dipasang langsung pada runtime command path.
 
-## RC4 Two-Person Extreme Approval
+## Two-Person Extreme Approval
 
-Perubahan yang sangat besar membutuhkan dua reviewer berbeda:
+Perubahan sangat besar membutuhkan dua reviewer berbeda:
 
 ```yaml
 governance:
@@ -158,17 +149,7 @@ governance:
       require-at-least-one-senior-reviewer: true
 ```
 
-Contoh price `100 -> 250` menghasilkan approval biasa terlebih dahulu. Pada `/cve governance approval approve <id>`:
-
-1. reviewer pertama hanya membuat durable first-review evidence; mutation belum berjalan;
-2. reviewer yang sama tidak dapat menjadi reviewer kedua;
-3. reviewer kedua yang berbeda menjalankan command yang sama;
-4. minimal satu reviewer harus senior bila policy default aktif;
-5. setelah syarat terpenuhi, approval RC2 masuk `EXECUTING` lalu mutation dijalankan oleh `ShopAdminService`.
-
-Senior reviewer adalah Royal Treasurer dengan scope sesuai, governance admin, atau full admin. `cdrvephilimeconomy.governance.approve` tetap dapat mereview, tetapi permission tersebut sendiri tidak dihitung senior.
-
-First-review evidence menyimpan fingerprint SHA-256 immutable request fields. Bila request berubah, evidence lama tidak dapat dipakai untuk mutation baru.
+Reviewer pertama hanya membuat durable first-review evidence. Reviewer kedua harus berbeda. Dengan policy default, minimal satu reviewer harus Royal Treasurer dengan scope sesuai, governance admin, atau full admin. First-review evidence memakai fingerprint SHA-256 request sehingga evidence lama tidak dapat dipakai untuk target mutation yang berubah.
 
 ## Governance Persistence
 
@@ -193,8 +174,6 @@ logs/governance-dual-approval-history.log
 
 ## Permissions
 
-Existing beta.2:
-
 ```text
 cdrvephilimeconomy.admin
 cdrvephilimeconomy.shop.view
@@ -207,31 +186,16 @@ cdrvephilimeconomy.shop.item
 cdrvephilimeconomy.shop.price
 cdrvephilimeconomy.shop.stock
 cdrvephilimeconomy.shop.manager
-```
-
-beta.3:
-
-```text
 cdrvephilimeconomy.governance.view
 cdrvephilimeconomy.governance.approve
 cdrvephilimeconomy.governance.admin
 ```
 
-`cdrvephilimeconomy.admin` mewarisi semuanya.
+`cdrvephilimeconomy.admin` mewarisi seluruh permission plugin.
 
 ## Audit
 
-Grant/revoke, approval, quota reservation, dan dual-review memakai `logs/admin-audit.log`. Jika Discord administrative audit aktif, event governance ikut dikirim async melalui sink yang sama.
-
-Event RC3/RC4 penting:
-
-```text
-GOVERNANCE_QUOTA_RESERVED
-GOV_DUAL_APPROVAL_FIRST_REVIEW_REQUEST
-GOV_DUAL_APPROVAL_FIRST_REVIEW_RECORDED
-GOV_DUAL_APPROVAL_SECOND_REVIEW_READY
-GOV_DUAL_APPROVAL_FIRST_REVIEW_CLEARED
-```
+Grant/revoke, approval, quota reservation, dan dual-review menggunakan `logs/admin-audit.log`. Jika Discord administrative audit aktif, event governance ikut dikirim async melalui sink yang sama.
 
 ## Integrasi
 
@@ -246,6 +210,7 @@ GOV_DUAL_APPROVAL_FIRST_REVIEW_CLEARED
 - [`ROADMAP.md`](ROADMAP.md)
 - [`docs/BETA1_FINAL.md`](docs/BETA1_FINAL.md)
 - [`docs/BETA2_FINAL.md`](docs/BETA2_FINAL.md)
+- [`docs/BETA3_FINAL.md`](docs/BETA3_FINAL.md)
 - [`docs/BETA3_RC1.md`](docs/BETA3_RC1.md)
 - [`docs/BETA3_RC2.md`](docs/BETA3_RC2.md)
 - [`docs/BETA3_RC3.md`](docs/BETA3_RC3.md)
@@ -254,8 +219,8 @@ GOV_DUAL_APPROVAL_FIRST_REVIEW_CLEARED
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - [`docs/ECONOMY_DESIGN.md`](docs/ECONOMY_DESIGN.md)
 
-## Next beta.3 Update
+## Next Development Phase
 
-RC4 adalah hardening candidate terakhir yang direncanakan. Jika runtime regression/security test RC4 aman, tahap berikutnya adalah **`0.1.0-beta.3 FINAL`**. RC tambahan hanya dibuat bila ditemukan bug nyata.
+Setelah `0.1.0-beta.3` FINAL, development berikutnya adalah **beta.4 — Controlled Dynamic Pricing**. Governance beta.3 dianggap frozen baseline; bug fix harus dipisahkan dari fitur beta.4.
 
 Plugin dikembangkan oleh **MenkiPlugcore** untuk **Vephilim Roleplay**.
