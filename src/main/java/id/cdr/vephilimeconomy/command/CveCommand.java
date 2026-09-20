@@ -1,6 +1,7 @@
 package id.cdr.vephilimeconomy.command;
 
 import id.cdr.vephilimeconomy.CdrVephilimEconomy;
+import id.cdr.vephilimeconomy.diagnostic.DoctorService;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -28,7 +29,7 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
         }
 
         if (args.length == 0) {
-            sender.sendMessage("§6CdrVephilimEconomy §7- §f/cve reload §7| §f/cve status §7| §f/cve safety status");
+            sender.sendMessage("§6CdrVephilimEconomy §7- §f/cve reload §7| §f/cve status §7| §f/cve doctor §7| §f/cve safety status");
             return true;
         }
 
@@ -44,11 +45,29 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
+        if (sub.equals("doctor")) {
+            DoctorService.Report report = plugin.runDoctor();
+            sender.sendMessage("§6[CVE Doctor] §fHealth diagnostics " + plugin.getDescription().getVersion());
+            for (DoctorService.Check check : report.checks()) {
+                String prefix = switch (check.level()) {
+                    case PASS -> "§a[PASS]";
+                    case WARN -> "§e[WARN]";
+                    case FAIL -> "§c[FAIL]";
+                };
+                sender.sendMessage(prefix + " §f" + check.name() + " §7- " + check.detail());
+            }
+            String summaryColor = report.failCount() > 0 ? "§c" : report.warnCount() > 0 ? "§e" : "§a";
+            sender.sendMessage("§6[CVE Doctor] §fSummary: §a" + report.passCount() + " PASS §7| §e"
+                    + report.warnCount() + " WARN §7| §c" + report.failCount() + " FAIL §7| "
+                    + summaryColor + (report.healthy() ? "HEALTHY" : "ATTENTION REQUIRED"));
+            return true;
+        }
+
         if (sub.equals("safety")) {
             return handleSafety(sender, args);
         }
 
-        sender.sendMessage("§cSubcommand tidak dikenal. Gunakan /cve reload, /cve status, atau /cve safety status.");
+        sender.sendMessage("§cSubcommand tidak dikenal. Gunakan /cve reload, /cve status, /cve doctor, atau /cve safety status.");
         return true;
     }
 
@@ -85,6 +104,7 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
             List<String> result = new ArrayList<>();
             addIfStarts(result, "reload", input);
             addIfStarts(result, "status", input);
+            addIfStarts(result, "doctor", input);
             addIfStarts(result, "safety", input);
             return result;
         }
