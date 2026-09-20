@@ -49,7 +49,7 @@ public final class AdminMutationJournal {
             validateMarker(marker);
 
             if (!liveFile.isFile()) {
-                return block("Pending admin mutation ditemukan tetapi shops.yml tidak tersedia.");
+                return blockRecovery("Pending admin mutation ditemukan tetapi shops.yml tidak tersedia.");
             }
 
             String liveHash = sha256(Files.readAllBytes(liveFile.toPath()));
@@ -83,10 +83,10 @@ public final class AdminMutationJournal {
             }
 
             String backupHash = backupFile.isFile() ? sha256(Files.readAllBytes(backupFile.toPath())) : "missing";
-            return block("Pending admin mutation ambigu: hash shops.yml tidak cocok original/candidate. backupHash="
+            return blockRecovery("Pending admin mutation ambigu: hash shops.yml tidak cocok original/candidate. backupHash="
                     + backupHash + ". Mutation admin dikunci sampai investigasi manual.");
         } catch (IOException exception) {
-            return block("Pending admin mutation tidak dapat direkonsiliasi: " + exception.getMessage());
+            return blockRecovery("Pending admin mutation tidak dapat direkonsiliasi: " + exception.getMessage());
         }
     }
 
@@ -177,7 +177,7 @@ public final class AdminMutationJournal {
         return pendingFile;
     }
 
-    private RecoveryStatus block(String reason) {
+    private RecoveryStatus blockRecovery(String reason) {
         blocked = true;
         blockedReason = reason;
         if (logger != null) {
