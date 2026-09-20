@@ -3,6 +3,7 @@ package id.cdr.vephilimeconomy.transaction;
 public enum TransactionFailure {
     NONE,
     NOT_ALLOWED,
+    PRICE_CHANGED,
     INSUFFICIENT_MONEY,
     INSUFFICIENT_STOCK,
     INSUFFICIENT_ITEMS,
