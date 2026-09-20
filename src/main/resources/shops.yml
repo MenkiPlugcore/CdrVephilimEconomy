@@ -4,6 +4,7 @@ shops:
     npc-id: -1
     size: 27
     enabled: false
+    manager: ""
     listings:
       iron_ingot:
         material: IRON_INGOT
@@ -22,11 +23,13 @@ shops:
         initial-stock: 0
         max-stock: 1024
 
-# beta.1:
-# - npc-id harus diisi dengan ID Citizens NPC yang sudah dibuat.
+# beta.2:
+# - Operasi rutin shop sekarang dapat dilakukan melalui /cve shop ... tanpa edit YAML manual.
+# - npc-id harus menunjuk Citizens NPC yang valid; -1 berarti belum dibind.
 # - enabled harus true agar NPC membuka GUI.
+# - manager adalah metadata penanggung jawab shop dan tidak memberi permission otomatis.
 # - mode menentukan arah transaksi: BUY, SELL, atau BUY_SELL.
 # - mengisi buy-price saja TIDAK mengaktifkan BUY jika mode masih SELL.
 # - mengisi sell-price saja TIDAK mengaktifkan SELL jika mode masih BUY.
-# - stock mutable disimpan terpisah di stock.yml pada folder plugin.
-# - identitas item beta.1 masih berbasis item vanilla/material polos.
+# - stock runtime disimpan terpisah di stock.yml; initial-stock hanya dipakai saat listing baru pertama kali dibuat.
+# - identitas item saat ini masih berbasis item vanilla/material polos.
