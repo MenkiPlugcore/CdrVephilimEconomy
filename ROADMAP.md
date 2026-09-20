@@ -106,13 +106,17 @@ Target: ekonomi dapat dikelola sebagai bagian dari RP kerajaan tanpa memberi ful
 - [x] Persistent `governance-usage.yml` + backup/atomic write.
 - [x] Cooldown anti-command-burst per role.
 - [x] Quota health fail-closed untuk role-only direct mutation.
-- [ ] Two-person approval untuk perubahan sangat sensitif.
+- [x] RC3 quota listener benar-benar wired ke runtime command.
+- [x] Two-person approval untuk perubahan sangat sensitif.
+- [x] Durable first-review evidence + fingerprint request.
+- [x] Distinct second reviewer + minimal satu senior reviewer.
+- [x] Fail-closed dual approval storage + history evidence.
 - [ ] Final beta.3 regression dan security audit.
 - [ ] Finalisasi `0.1.0-beta.3`.
 
-**Status implementasi:** `0.1.0-beta.3-RC3` pada branch `dev/beta.3`. RC1 membangun role/scope foundation, RC2 menambahkan sensitive-change approval, dan RC3 menutup bypass perubahan kecil berulang melalui rolling quota + cooldown durable.
+**Status implementasi:** `0.1.0-beta.3-RC4` pada branch `dev/beta.3`. RC1 membangun role/scope foundation, RC2 menambahkan sensitive-change approval, RC3 menutup bypass perubahan kecil berulang melalui rolling quota + cooldown durable, dan RC4 menambahkan two-person approval untuk mutation ekstrem sekaligus memperbaiki wiring quota runtime.
 
-Dokumentasi: [`docs/BETA3_RC1.md`](docs/BETA3_RC1.md), [`docs/BETA3_RC2.md`](docs/BETA3_RC2.md), [`docs/BETA3_RC3.md`](docs/BETA3_RC3.md), dan [`docs/BETA3_TEST_PLAN.md`](docs/BETA3_TEST_PLAN.md).
+Dokumentasi: [`docs/BETA3_RC1.md`](docs/BETA3_RC1.md), [`docs/BETA3_RC2.md`](docs/BETA3_RC2.md), [`docs/BETA3_RC3.md`](docs/BETA3_RC3.md), [`docs/BETA3_RC4.md`](docs/BETA3_RC4.md), dan [`docs/BETA3_TEST_PLAN.md`](docs/BETA3_TEST_PLAN.md).
 
 ## beta.4 — Controlled Dynamic Pricing
 
