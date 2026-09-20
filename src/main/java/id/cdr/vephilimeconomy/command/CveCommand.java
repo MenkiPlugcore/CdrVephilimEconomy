@@ -24,6 +24,7 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
     private static final String DELETE = "cdrvephilimeconomy.shop.delete";
     private static final String BIND = "cdrvephilimeconomy.shop.bind";
     private static final String TOGGLE = "cdrvephilimeconomy.shop.toggle";
+    private static final String EDIT = "cdrvephilimeconomy.shop.edit";
     private static final String ITEM = "cdrvephilimeconomy.shop.item";
     private static final String PRICE = "cdrvephilimeconomy.shop.price";
     private static final String STOCK = "cdrvephilimeconomy.shop.stock";
@@ -114,6 +115,16 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
                 plugin.shopInfoLines(args[2]).forEach(sender::sendMessage);
                 return true;
             }
+            case "schema" -> {
+                if (!require(sender, VIEW)) return true;
+                send(sender, service.schemaStatus());
+                return true;
+            }
+            case "validate" -> {
+                if (!require(sender, VIEW)) return true;
+                send(sender, service.validateConfig());
+                return true;
+            }
             case "create" -> {
                 if (!require(sender, CREATE)) return true;
                 if (args.length < 3) return usage(sender, "/cve shop create <id> [size] [display name]");
@@ -138,6 +149,20 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
                     return true;
                 }
                 send(sender, service.deleteShop(sender.getName(), args[2]));
+                return true;
+            }
+            case "name" -> {
+                if (!require(sender, EDIT)) return true;
+                if (args.length < 4) return usage(sender, "/cve shop name <shop> <display name>");
+                send(sender, service.setDisplayName(sender.getName(), args[2], join(args, 3)));
+                return true;
+            }
+            case "size" -> {
+                if (!require(sender, EDIT)) return true;
+                if (args.length < 4) return usage(sender, "/cve shop size <shop> <9|18|27|36|45|54>");
+                Integer size = parseInt(args[3]);
+                if (size == null) return invalidNumber(sender, args[3]);
+                send(sender, service.setSize(sender.getName(), args[2], size));
                 return true;
             }
             case "bind" -> {
@@ -212,6 +237,14 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
                 send(sender, service.setMode(sender.getName(), args[2], args[3], mode));
                 return true;
             }
+            case "slot" -> {
+                if (!require(sender, ITEM)) return true;
+                if (args.length < 5) return usage(sender, "/cve shop slot <shop> <listing> <slot>");
+                Integer slot = parseInt(args[4]);
+                if (slot == null) return invalidNumber(sender, args[4]);
+                send(sender, service.setSlot(sender.getName(), args[2], args[3], slot));
+                return true;
+            }
             case "initialstock", "maxstock" -> {
                 if (!require(sender, STOCK)) return true;
                 if (args.length < 5) return usage(sender, "/cve shop " + action + " <shop> <listing> <value>");
@@ -267,14 +300,15 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
     }
 
     private void sendShopHelp(CommandSender sender) {
-        sender.sendMessage("§6[CVE Shop] §fBeta.2 management commands:");
-        sender.sendMessage("§e/cve shop list §7| §e/cve shop info <shop>");
+        sender.sendMessage("§6[CVE Shop] §fBeta.2 RC2 management commands:");
+        sender.sendMessage("§e/cve shop list §7| §e/cve shop info <shop> §7| §e/cve shop schema §7| §e/cve shop validate");
         sender.sendMessage("§e/cve shop create <id> [size] [display name] §7| §e/cve shop delete <id> CONFIRM");
+        sender.sendMessage("§e/cve shop name <shop> <display name> §7| §e/cve shop size <shop> <size>");
         sender.sendMessage("§e/cve shop bind <shop> <npc-id|-1> §7| §e/cve shop enable|disable <shop>");
         sender.sendMessage("§e/cve shop manager <shop> <name|none>");
         sender.sendMessage("§e/cve shop additem <shop> <listing> <material|hand> <slot> <mode> <buy> <sell> <initial> <max>");
         sender.sendMessage("§e/cve shop removeitem <shop> <listing> CONFIRM §7| §e/cve shop mode <shop> <listing> <mode>");
-        sender.sendMessage("§e/cve shop price <shop> <listing> <buy|sell> <value>");
+        sender.sendMessage("§e/cve shop slot <shop> <listing> <slot> §7| §e/cve shop price <shop> <listing> <buy|sell> <value>");
         sender.sendMessage("§e/cve shop initialstock|maxstock <shop> <listing> <value>");
         sender.sendMessage("§e/cve shop stock <shop> <listing> <set|add|remove> <amount>");
     }
@@ -381,13 +415,14 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
     private List<String> completeShop(CommandSender sender, String[] args) {
         if (args.length == 2) {
             List<String> actions = new ArrayList<>();
-            if (has(sender, VIEW)) { actions.add("list"); actions.add("info"); }
+            if (has(sender, VIEW)) { actions.add("list"); actions.add("info"); actions.add("schema"); actions.add("validate"); }
             if (has(sender, CREATE)) actions.add("create");
             if (has(sender, DELETE)) actions.add("delete");
+            if (has(sender, EDIT)) { actions.add("name"); actions.add("size"); }
             if (has(sender, BIND)) actions.add("bind");
             if (has(sender, TOGGLE)) { actions.add("enable"); actions.add("disable"); }
             if (has(sender, MANAGER)) actions.add("manager");
-            if (has(sender, ITEM)) { actions.add("additem"); actions.add("removeitem"); actions.add("mode"); }
+            if (has(sender, ITEM)) { actions.add("additem"); actions.add("removeitem"); actions.add("mode"); actions.add("slot"); }
             if (has(sender, PRICE)) actions.add("price");
             if (has(sender, STOCK)) { actions.add("initialstock"); actions.add("maxstock"); actions.add("stock"); }
             return matches(args[1], actions);
@@ -395,13 +430,15 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
 
         if (args.length >= 3) {
             String action = args[1].toLowerCase(Locale.ROOT);
-            if (args.length == 3 && !action.equals("create") && !action.equals("list")) {
+            if (args.length == 3 && !action.equals("create") && !action.equals("list")
+                    && !action.equals("schema") && !action.equals("validate")) {
                 return matches(args[2], plugin.runtimeShopIds());
             }
-            if (args.length == 4 && List.of("removeitem", "price", "mode", "initialstock", "maxstock", "stock").contains(action)) {
+            if (args.length == 4 && List.of("removeitem", "price", "mode", "slot", "initialstock", "maxstock", "stock").contains(action)) {
                 return matches(args[3], plugin.runtimeListingIds(args[2]));
             }
             if (args.length == 4 && action.equals("delete")) return matches(args[3], List.of("CONFIRM"));
+            if (args.length == 4 && action.equals("size")) return matches(args[3], List.of("9", "18", "27", "36", "45", "54"));
             if (args.length == 5 && action.equals("removeitem")) return matches(args[4], List.of("CONFIRM"));
             if (args.length == 5 && action.equals("price")) return matches(args[4], List.of("buy", "sell"));
             if (args.length == 5 && action.equals("mode")) return matches(args[4], List.of("BUY", "SELL", "BUY_SELL"));
@@ -416,7 +453,8 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
 
     private static boolean hasAnyShopPermission(CommandSender sender) {
         return has(sender, VIEW) || has(sender, CREATE) || has(sender, DELETE) || has(sender, BIND)
-                || has(sender, TOGGLE) || has(sender, ITEM) || has(sender, PRICE) || has(sender, STOCK) || has(sender, MANAGER);
+                || has(sender, TOGGLE) || has(sender, EDIT) || has(sender, ITEM) || has(sender, PRICE)
+                || has(sender, STOCK) || has(sender, MANAGER);
     }
 
     private static List<String> matches(String inputRaw, List<String> values) {
