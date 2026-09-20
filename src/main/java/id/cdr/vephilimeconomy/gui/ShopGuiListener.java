@@ -120,11 +120,10 @@ public final class ShopGuiListener implements Listener {
     @EventHandler
     public void onDrag(InventoryDragEvent event) {
         Inventory top = event.getView().getTopInventory();
-        if (!(top.getHolder() instanceof ShopInventoryHolder)) {
-            return;
-        }
-        int topSize = top.getSize();
-        if (event.getRawSlots().stream().anyMatch(slot -> slot < topSize)) {
+        if (top.getHolder() instanceof ShopInventoryHolder) {
+            // Hard-cancel every drag while the shop view is open. This also prevents
+            // unusual drag distributions confined to the player inventory from
+            // racing a transaction/GUI refresh in the same view.
             event.setCancelled(true);
         }
     }
