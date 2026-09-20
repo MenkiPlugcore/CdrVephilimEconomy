@@ -87,7 +87,7 @@ public final class DynamicPricingService {
                     Shop shop = registry.findById(shopId).orElse(null);
                     if (shop == null) {
                         warn("Pricing policy mengacu ke shop yang tidak ada: " + shopId + "/" + listingId);
-                    } else if (shop.listing(listingId) == null) {
+                    } else if (!shop.listings().containsKey(listingId)) {
                         warn("Pricing policy mengacu ke listing yang tidak ada: " + shopId + "/" + listingId);
                     }
                 }
