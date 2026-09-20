@@ -1,5 +1,7 @@
 package id.cdr.vephilimeconomy;
 
+import id.cdr.vephilimeconomy.admin.AdminAuditService;
+import id.cdr.vephilimeconomy.admin.ShopAdminService;
 import id.cdr.vephilimeconomy.audit.AuditService;
 import id.cdr.vephilimeconomy.command.CveCommand;
 import id.cdr.vephilimeconomy.diagnostic.DoctorService;
@@ -9,6 +11,8 @@ import id.cdr.vephilimeconomy.gui.ShopGuiListener;
 import id.cdr.vephilimeconomy.gui.ShopGuiService;
 import id.cdr.vephilimeconomy.gui.ShopInventoryHolder;
 import id.cdr.vephilimeconomy.npc.CitizensNpcListener;
+import id.cdr.vephilimeconomy.shop.Shop;
+import id.cdr.vephilimeconomy.shop.ShopListing;
 import id.cdr.vephilimeconomy.shop.ShopRegistry;
 import id.cdr.vephilimeconomy.storage.StockRepository;
 import id.cdr.vephilimeconomy.transaction.PendingTransactionJournal;
@@ -27,6 +31,11 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
 
 public final class CdrVephilimEconomy extends JavaPlugin {
     private RuntimeSafetyState safetyState;
@@ -35,6 +44,8 @@ public final class CdrVephilimEconomy extends JavaPlugin {
     private ShopRegistry shopRegistry;
     private StockRepository stockRepository;
     private AuditService auditService;
+    private AdminAuditService adminAuditService;
+    private ShopAdminService shopAdminService;
     private TransactionService transactionService;
     private ShopGuiService guiService;
     private CitizensNpcListener citizensNpcListener;
@@ -106,6 +117,9 @@ public final class CdrVephilimEconomy extends JavaPlugin {
             return;
         }
 
+        adminAuditService = new AdminAuditService(this);
+        shopAdminService = new ShopAdminService(this, stockRepository, adminAuditService);
+
         PluginCommand command = getCommand("cve");
         if (command == null) {
             getLogger().severe("Command /cve tidak terdaftar di plugin.yml. Plugin dinonaktifkan.");
@@ -145,6 +159,8 @@ public final class CdrVephilimEconomy extends JavaPlugin {
             auditService = null;
         }
 
+        shopAdminService = null;
+        adminAuditService = null;
         shopRegistry = null;
         guiService = null;
         economy = null;
@@ -248,6 +264,85 @@ public final class CdrVephilimEconomy extends JavaPlugin {
     public DoctorService.Report runDoctor() {
         return new DoctorService(this, shopRegistry, stockRepository, auditService,
                 safetyState, pendingJournal, economy).run();
+    }
+
+    public ShopAdminService shopAdminService() {
+        return shopAdminService;
+    }
+
+    public AdminAuditService adminAuditService() {
+        return adminAuditService;
+    }
+
+    public boolean isEconomySafetyStopped() {
+        return safetyState != null && safetyState.isStopped();
+    }
+
+    public Optional<Shop> findRuntimeShop(String rawShopId) {
+        if (shopRegistry == null || rawShopId == null) {
+            return Optional.empty();
+        }
+        return shopRegistry.findById(rawShopId.trim().toLowerCase(Locale.ROOT));
+    }
+
+    public List<String> runtimeShopIds() {
+        if (shopRegistry == null) {
+            return Collections.emptyList();
+        }
+        List<String> ids = new ArrayList<>();
+        for (Shop shop : shopRegistry.all()) {
+            ids.add(shop.id());
+        }
+        return Collections.unmodifiableList(ids);
+    }
+
+    public List<String> runtimeListingIds(String rawShopId) {
+        Optional<Shop> shop = findRuntimeShop(rawShopId);
+        if (shop.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return List.copyOf(shop.get().listings().keySet());
+    }
+
+    public List<String> shopListLines() {
+        if (shopRegistry == null || shopRegistry.shopCount() == 0) {
+            return List.of("§7Belum ada shop runtime.");
+        }
+        List<String> lines = new ArrayList<>();
+        for (Shop shop : shopRegistry.all()) {
+            String manager = shop.manager().isBlank() ? "-" : shop.manager();
+            lines.add("§e" + shop.id() + " §7| " + (shop.enabled() ? "§aENABLED" : "§cDISABLED")
+                    + " §7| npc=§f" + shop.npcId()
+                    + " §7| listings=§f" + shop.listings().size()
+                    + " §7| manager=§f" + manager);
+        }
+        return lines;
+    }
+
+    public List<String> shopInfoLines(String rawShopId) {
+        Optional<Shop> optional = findRuntimeShop(rawShopId);
+        if (optional.isEmpty()) {
+            return List.of("§cShop tidak ditemukan: " + rawShopId);
+        }
+        Shop shop = optional.get();
+        String manager = shop.manager().isBlank() ? "-" : shop.manager();
+        List<String> lines = new ArrayList<>();
+        lines.add("§6[CVE Shop] §f" + shop.id() + " §7- " + shop.displayName());
+        lines.add("§7enabled=§f" + shop.enabled() + " §7npc=§f" + shop.npcId()
+                + " §7size=§f" + shop.size() + " §7manager=§f" + manager);
+        if (shop.listings().isEmpty()) {
+            lines.add("§7Listings: kosong");
+            return lines;
+        }
+        lines.add("§7Listings:");
+        for (ShopListing listing : shop.listings().values()) {
+            int stock = stockRepository == null ? -1 : stockRepository.getStock(shop.id(), listing.id());
+            lines.add("§f- " + listing.id() + " §7" + listing.material().name()
+                    + " slot=" + listing.slot() + " mode=" + listing.mode()
+                    + " buy=" + listing.buyPrice() + " sell=" + listing.sellPrice()
+                    + " stock=" + stock + "/" + listing.maxStock());
+        }
+        return lines;
     }
 
     public String statusSummary() {
@@ -431,6 +526,9 @@ public final class CdrVephilimEconomy extends JavaPlugin {
         getLogger().info("Audit policy: rejected=" + settings.auditRejected()
                 + ", busyRejected=" + settings.auditBusyRejected()
                 + ", discordIncludeRejected=" + settings.discordIncludeRejected() + ".");
+        if (adminAuditService != null && !adminAuditService.isWritable()) {
+            getLogger().warning("Admin audit file tidak writable; perubahan shop beta.2 akan ditolak fail-closed.");
+        }
 
         if (pending.total() > 0) {
             getLogger().severe("Pending transaction recovery required: " + pending.summary());
@@ -442,7 +540,7 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                     + ", reason=" + safetyState.reason());
         }
         if (shopRegistry.activeBindingCount() == 0) {
-            getLogger().warning("Tidak ada active NPC binding. Isi npc-id dan enabled di shops.yml lalu gunakan /cve reload.");
+            getLogger().warning("Tidak ada active NPC binding. Gunakan /cve shop bind dan /cve shop enable, atau edit shops.yml lalu /cve reload.");
         }
     }
 
