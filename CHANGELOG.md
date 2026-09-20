@@ -11,6 +11,28 @@ Format mengikuti prinsip Keep a Changelog dan versioning proyek akan menggunakan
 - Roadmap development awal.
 - Konsep NPC-only economy untuk Vephilim Roleplay.
 
+## [0.1.0-beta.1-RC6]
+
+### Added
+- Command admin `/cve doctor` untuk menjalankan health diagnostics non-destruktif dari satu command.
+- Doctor memeriksa runtime service, Citizens, Vault/economy provider, strict YAML `config.yml` dan `shops.yml`, sinkronisasi runtime-vs-disk, binding NPC Citizens, stock snapshot, backup, marker anti-reset, stale temp file, filesystem writability, audit writer, Discord webhook configuration, serta persistent safety state.
+- Output doctor menggunakan status `PASS`, `WARN`, dan `FAIL` beserta summary total agar masalah operasional cepat dilokalisasi.
+- Stock doctor membandingkan `stock.yml` utama terhadap stock runtime untuk mendeteksi persisted/runtime mismatch tanpa mengubah stock.
+
+### Changed
+- Audit service sekarang mengekspos health state secara aman tanpa membocorkan webhook URL.
+- Discord doctor hanya memvalidasi konfigurasi URL secara lokal; command tidak melakukan network ping dan tidak mengirim webhook test.
+- Artifact/version candidate dinaikkan menjadi `0.1.0-beta.1-RC6`.
+
+### Security / Safety
+- `/cve doctor` bersifat read-mostly; satu-satunya write test adalah temporary file di data folder yang langsung dihapus untuk memastikan storage writable.
+- Safety stop aktif selalu muncul sebagai `FAIL` pada doctor dan tidak dapat diubah oleh command doctor.
+- `stock.yml.initialized` yang hilang dianggap failure karena melemahkan perlindungan anti-reset supply.
+
+### Status
+- `0.1.0-beta.1-RC6` menggantikan RC5 sebagai kandidat runtime QA.
+- BUY/SELL satuan dan bulk tetap tercatat lolos pengujian awal user; fokus QA berikutnya adalah doctor diagnostics dan regression/anti-dupe final sebelum beta.1 final.
+
 ## [0.1.0-beta.1-RC5]
 
 ### Added
