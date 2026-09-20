@@ -8,9 +8,11 @@ import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -22,6 +24,7 @@ public final class StockRepository {
     private final File file;
     private final File backupFile;
     private final File tempFile;
+    private final File initializedMarker;
     private final Logger logger;
     private final Map<String, Integer> stocks = new HashMap<>();
 
@@ -29,11 +32,18 @@ public final class StockRepository {
         this.file = file;
         this.backupFile = new File(file.getParentFile(), file.getName() + ".bak");
         this.tempFile = new File(file.getParentFile(), file.getName() + ".tmp");
+        this.initializedMarker = new File(file.getParentFile(), file.getName() + ".initialized");
         this.logger = logger;
     }
 
     public synchronized void load(ShopRegistry registry) throws IOException {
         stocks.clear();
+
+        boolean snapshotExists = file.exists() || backupFile.exists() || tempFile.exists();
+        if (!snapshotExists && initializedMarker.exists()) {
+            throw new IOException("Semua snapshot stock hilang setelah storage pernah diinisialisasi. "
+                    + "Refusing to reset stock to initial-stock.");
+        }
 
         LoadResult loaded = loadBestSnapshot(registry);
         YamlConfiguration yaml = loaded.yaml();
@@ -83,6 +93,7 @@ public final class StockRepository {
             refreshBackupBestEffort();
         }
 
+        ensureInitializedMarker();
         cleanupStaleTemp();
     }
 
@@ -99,6 +110,7 @@ public final class StockRepository {
         Integer previous = stocks.put(key, newStock);
         try {
             persist();
+            ensureInitializedMarker();
         } catch (IOException exception) {
             if (previous == null) {
                 stocks.remove(key);
@@ -112,6 +124,11 @@ public final class StockRepository {
 
     public synchronized void flush() throws IOException {
         persist();
+        ensureInitializedMarker();
+    }
+
+    public synchronized int entryCount() {
+        return stocks.size();
     }
 
     private LoadResult loadBestSnapshot(ShopRegistry registry) throws IOException {
@@ -158,6 +175,7 @@ public final class StockRepository {
             }
         }
 
+        logger.info("Belum ada snapshot stock. Menginisialisasi storage baru dari initial-stock.");
         return new LoadResult(new YamlConfiguration(), false);
     }
 
@@ -185,6 +203,18 @@ public final class StockRepository {
             cleanupStaleTemp();
             throw exception;
         }
+    }
+
+    private void ensureInitializedMarker() throws IOException {
+        File parent = initializedMarker.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw new IOException("Could not create stock marker directory: " + parent);
+        }
+
+        String marker = "schema=" + SCHEMA_VERSION + System.lineSeparator()
+                + "initialized-at=" + Instant.now() + System.lineSeparator();
+        Files.writeString(initializedMarker.toPath(), marker, StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
     }
 
     private void verifySnapshot(YamlConfiguration yaml) throws IOException {
