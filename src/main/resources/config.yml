@@ -34,8 +34,8 @@ audit:
     # FAILED/internal error tetap dikirim saat Discord audit aktif.
     include-rejected: false
 
-# beta.2 administrative audit terpisah dari transaction audit.
-# Local admin audit selalu menjadi bukti utama/fail-closed untuk mutation shop.
+# Administrative audit terpisah dari transaction audit.
+# Local admin audit selalu menjadi bukti utama/fail-closed untuk mutation shop/governance.
 admin-audit:
   discord:
     enabled: false
@@ -44,6 +44,22 @@ admin-audit:
     # REQUEST bisa sangat ramai. SUCCESS/FAILED/REJECTED tetap dikirim
     # saat Discord admin audit aktif walaupun opsi ini false.
     include-requests: false
+
+# beta.3 Economy Staff & Governance.
+# Permission beta.2 tetap didukung dan menjadi explicit bypass untuk role guardrail.
+# Staff yang hanya mendapat role internal CdrVephilimEconomy dibatasi oleh nilai berikut.
+governance:
+  limits:
+    economy-staff:
+      # Maksimal perubahan buy/sell price per satu operasi dibanding harga saat ini.
+      max-price-change-percent: 20.0
+      # Staff hanya dapat add/remove runtime stock; SET memerlukan Royal Treasurer/admin.
+      max-runtime-stock-delta: 128
+
+    economy-manager:
+      max-price-change-percent: 50.0
+      # Manager hanya dapat add/remove runtime stock; SET memerlukan Royal Treasurer/admin.
+      max-runtime-stock-delta: 1024
 
 messages:
   prefix: "<dark_gray>[<gold>Vephilim Economy</gold>]</dark_gray> "
