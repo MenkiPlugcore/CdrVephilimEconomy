@@ -1,5 +1,5 @@
 name: CdrVephilimEconomy
-version: '0.1.0-beta.1-RC4'
+version: '0.1.0-beta.1-RC5'
 main: id.cdr.vephilimeconomy.CdrVephilimEconomy
 api-version: '1.21.11'
 authors: [MenkiPlugcore]
@@ -10,7 +10,7 @@ depend: [Citizens, Vault]
 commands:
   cve:
     description: Administrative command for CdrVephilimEconomy.
-    usage: /cve <reload|status>
+    usage: /cve <reload|status|safety>
     aliases: [veconomy]
     permission: cdrvephilimeconomy.admin
 
