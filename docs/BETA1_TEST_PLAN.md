@@ -26,11 +26,14 @@ Dokumen ini dipakai sebelum `beta.1` dianggap siap dipasang sebagai build uji Ve
 - [ ] Player dapat membuka shop dari NPC yang terdaftar.
 - [ ] NPC yang tidak terdaftar tidak membuka shop.
 - [ ] Tidak ada `/shop` atau command shop player.
+- [ ] Setelah GUI terbuka, player yang berjalan/teleport melewati `npc.max-transaction-distance` tidak dapat bertransaksi.
+- [ ] GUI ditutup jika NPC binding tidak ada, NPC despawn, world berbeda, atau player terlalu jauh saat klik transaksi.
 
 ### BUY
 
 - [ ] Klik kiri membeli 1 item.
 - [ ] Shift + klik kiri membeli bulk amount sesuai config.
+- [ ] `bulk-amount` tidak pernah efektif melebihi `max-amount`.
 - [ ] Saldo berkurang tepat sesuai harga.
 - [ ] Stock berkurang tepat sesuai jumlah beli.
 - [ ] Item masuk ke inventory sebagai item yang sesuai.
@@ -49,6 +52,19 @@ Dokumen ini dipakai sebelum `beta.1` dianggap siap dipasang sebagai build uji Ve
 - [ ] SELL ditolak ketika player tidak memiliki item polos yang cukup.
 - [ ] SELL ditolak jika transaksi melewati `max-stock`.
 - [ ] Item dengan custom meta/enchant tidak ikut terjual sebagai item vanilla polos pada beta.1.
+
+## Config Validation
+
+- [ ] Shop ID dengan karakter di luar `[a-z0-9_-]` ditolak.
+- [ ] Listing ID invalid ditolak bersama definisi shop terkait.
+- [ ] `npc-id < -1` ditolak.
+- [ ] Size GUI yang bukan kelipatan 9 atau di luar 9-54 ditolak.
+- [ ] Material invalid/AIR ditolak.
+- [ ] Mode selain BUY/SELL/BUY_SELL ditolak.
+- [ ] Harga negatif, nol pada mode aktif, NaN/Infinity, atau stock bounds invalid ditolak.
+- [ ] Duplicate slot dalam satu shop ditolak.
+- [ ] Duplicate NPC ID antar shop aktif ditolak tanpa menghasilkan binding parsial.
+- [ ] Shop invalid tidak ikut dimuat ke stock runtime.
 
 ## Anti-abuse / Consistency
 
@@ -79,4 +95,4 @@ Dokumen ini dipakai sebelum `beta.1` dianggap siap dipasang sebagai build uji Ve
 
 ## Exit Criteria beta.1
 
-`beta.1` baru dianggap lulus jika jalur BUY/SELL utama, persistence stock, dan skenario anti-dupe di atas lolos di server uji. Fitur governance, admin GUI, dynamic pricing, dan market event tetap di luar scope beta.1.
+`beta.1` baru dianggap lulus jika jalur BUY/SELL utama, NPC-only proximity guard, persistence stock, config validation, dan skenario anti-dupe di atas lolos di server uji. Fitur governance, admin GUI, dynamic pricing, dan market event tetap di luar scope beta.1.
