@@ -27,6 +27,7 @@ public final class ShopAdminService {
     private final CdrVephilimEconomy plugin;
     private final StockRepository stocks;
     private final AdminAuditService audit;
+    private final AdminMutationJournal mutationJournal;
     private final File shopsFile;
     private final File backupFile;
     private final File candidateFile;
@@ -40,6 +41,19 @@ public final class ShopAdminService {
         this.backupFile = new File(plugin.getDataFolder(), "shops.yml.admin.bak");
         this.candidateFile = new File(plugin.getDataFolder(), "shops.yml.admin.candidate");
         this.writeTempFile = new File(plugin.getDataFolder(), "shops.yml.admin.tmp");
+        this.mutationJournal = new AdminMutationJournal(plugin.getDataFolder(), plugin.getLogger());
+
+        AdminMutationJournal.RecoveryStatus recovery = mutationJournal.recover(shopsFile, backupFile);
+        if (!recovery.healthy()) {
+            plugin.getLogger().severe("Admin mutation recovery belum sehat: " + recovery.detail());
+        } else if (recovery.hadPending()) {
+            try {
+                audit.record("SYSTEM", "ADMIN_MUTATION_RECOVERY", recovery.detail());
+            } catch (IOException exception) {
+                plugin.getLogger().warning("Admin mutation recovery selesai tetapi audit recovery gagal ditulis: "
+                        + exception.getMessage());
+            }
+        }
 
         try {
             ShopsSchemaManager.SchemaStatus status = ShopsSchemaManager.ensureCurrent(shopsFile, plugin.getLogger());
@@ -61,13 +75,19 @@ public final class ShopAdminService {
         try {
             ShopsSchemaManager.SchemaStatus status = ShopsSchemaManager.inspect(shopsFile);
             return Result.ok("shops.yml schema=v" + status.schema() + "/v" + ShopsSchemaManager.CURRENT_SCHEMA
-                    + (status.current() ? " CURRENT" : " LEGACY; akan dimigrasikan sebelum mutation berikutnya") + ".");
+                    + (status.current() ? " CURRENT" : " LEGACY; akan dimigrasikan sebelum mutation berikutnya")
+                    + "; schemaRecovery=" + (ShopsSchemaManager.hasPendingRecovery(shopsFile) ? "PENDING" : "OK")
+                    + "; adminMutation=" + mutationJournal.statusSummary() + ".");
         } catch (IOException exception) {
-            return Result.fail("Schema check gagal: " + exception.getMessage());
+            return Result.fail("Schema check gagal: " + exception.getMessage()
+                    + "; adminMutation=" + mutationJournal.statusSummary() + ".");
         }
     }
 
     public Result validateConfig() {
+        if (mutationJournal.isBlocked()) {
+            return Result.fail("Admin mutation recovery belum sehat: " + mutationJournal.statusSummary());
+        }
         try {
             ShopsSchemaManager.SchemaStatus schema = ShopsSchemaManager.inspect(shopsFile);
             ShopRegistry candidate = new ShopRegistry();
@@ -77,7 +97,9 @@ public final class ShopAdminService {
             }
             return Result.ok("Valid: schema=v" + schema.schema() + ", shops=" + candidate.shopCount()
                     + ", listings=" + candidate.listingCount() + ", npcBindings=" + candidate.activeBindingCount()
-                    + ", warnings=" + candidate.configurationWarningCount() + ".");
+                    + ", warnings=" + candidate.configurationWarningCount()
+                    + ", schemaRecovery=" + (ShopsSchemaManager.hasPendingRecovery(shopsFile) ? "PENDING" : "OK")
+                    + ", adminMutation=" + mutationJournal.statusSummary() + ".");
         } catch (IOException exception) {
             return Result.fail("Validation gagal: " + exception.getMessage());
         }
@@ -312,6 +334,10 @@ public final class ShopAdminService {
 
     public synchronized Result changeRuntimeStock(String actor, String rawShopId, String rawListingId,
                                                   StockOperation operation, int value) {
+        if (mutationJournal.isBlocked()) {
+            return Result.fail("Stock admin diblokir karena admin mutation recovery belum sehat: "
+                    + mutationJournal.statusSummary());
+        }
         if (plugin.isEconomySafetyStopped()) {
             return Result.fail("Stock admin diblokir saat economy safety stop aktif. Selesaikan recovery terlebih dahulu.");
         }
@@ -369,6 +395,11 @@ public final class ShopAdminService {
     }
 
     private synchronized Result mutate(String actor, String action, String detail, YamlMutation mutation) {
+        if (mutationJournal.isBlocked()) {
+            return Result.fail("Mutation diblokir karena admin mutation recovery belum sehat: "
+                    + mutationJournal.statusSummary());
+        }
+
         try {
             ShopsSchemaManager.ensureCurrent(shopsFile, plugin.getLogger());
         } catch (IOException exception) {
@@ -399,34 +430,59 @@ public final class ShopAdminService {
             Files.copy(shopsFile.toPath(), backupFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
             yaml.save(writeTempFile);
             loadStrict(writeTempFile);
+            byte[] candidateBytes = Files.readAllBytes(writeTempFile.toPath());
+            mutationJournal.begin(actor, action, detail, original, candidateBytes);
             moveReplace(writeTempFile, shopsFile);
+            mutationJournal.stage("LIVE_REPLACED");
         } catch (IOException exception) {
+            mutationJournal.block("Gagal menulis shops.yml pada mutation " + action + ": " + exception.getMessage());
             cleanupTemps();
             tryRecordFailure(actor, action + "_FAILED", detail + "; writeError=" + exception.getMessage());
-            return Result.fail("Gagal menulis shops.yml secara atomic: " + exception.getMessage());
+            return Result.fail("Gagal menulis shops.yml secara atomic. Mutation admin dikunci sampai recovery: "
+                    + exception.getMessage());
         }
 
         CdrVephilimEconomy.ReloadResult reload = plugin.reloadRuntime();
         if (!reload.success()) {
             String rollbackMessage;
+            boolean rollbackHealthy = false;
             try {
                 Files.write(shopsFile.toPath(), original);
                 CdrVephilimEconomy.ReloadResult rollbackReload = plugin.reloadRuntime();
-                rollbackMessage = rollbackReload.success() ? "runtime lama dipulihkan" : "rollback file berhasil tetapi reload rollback gagal: " + rollbackReload.message();
+                rollbackHealthy = rollbackReload.success();
+                rollbackMessage = rollbackHealthy
+                        ? "runtime lama dipulihkan"
+                        : "rollback file berhasil tetapi reload rollback gagal: " + rollbackReload.message();
             } catch (IOException exception) {
                 rollbackMessage = "rollback file gagal: " + exception.getMessage();
             }
+
+            if (rollbackHealthy) {
+                mutationJournal.complete("ROLLED_BACK");
+            } else {
+                mutationJournal.block("Mutation " + action + " gagal dan rollback runtime tidak dapat dibuktikan sehat: "
+                        + rollbackMessage);
+            }
+
             tryRecordFailure(actor, action + "_FAILED", detail + "; reloadError=" + reload.message() + "; " + rollbackMessage);
+            cleanupTemps();
             return Result.fail("Perubahan gagal diterapkan: " + reload.message() + "; " + rollbackMessage + ".");
         }
 
+        mutationJournal.stage("RUNTIME_RELOADED");
         try {
             audit.record(actor, action + "_SUCCESS", detail);
         } catch (IOException exception) {
             plugin.getLogger().severe("Admin change sukses tetapi success audit gagal ditulis: " + exception.getMessage());
-            return Result.ok("Perubahan berhasil dan runtime direload, tetapi success-audit gagal ditulis; cek console.");
-        } finally {
+            mutationJournal.complete("COMMITTED_AUDIT_WARNING");
             cleanupTemps();
+            return Result.ok("Perubahan berhasil dan runtime direload, tetapi success-audit gagal ditulis; cek console.");
+        }
+
+        mutationJournal.complete("COMMITTED");
+        cleanupTemps();
+        if (mutationJournal.isBlocked()) {
+            return Result.ok("Perubahan berhasil diterapkan, tetapi cleanup recovery journal gagal. Mutation admin berikutnya dikunci; cek console.");
         }
         return Result.ok("Perubahan berhasil diterapkan dan runtime direload tanpa restart.");
     }
