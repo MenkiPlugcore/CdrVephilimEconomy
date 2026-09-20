@@ -17,14 +17,17 @@ public final class AuditService implements AutoCloseable {
     private final JavaPlugin plugin;
     private final boolean localEnabled;
     private final boolean discordEnabled;
+    private final boolean discordIncludeRejected;
     private final String webhookUrl;
     private final HttpClient httpClient;
     private BufferedWriter writer;
 
-    public AuditService(JavaPlugin plugin, boolean localEnabled, boolean discordEnabled, String webhookUrl) throws IOException {
+    public AuditService(JavaPlugin plugin, boolean localEnabled, boolean discordEnabled,
+                        boolean discordIncludeRejected, String webhookUrl) throws IOException {
         this.plugin = plugin;
         this.localEnabled = localEnabled;
         this.discordEnabled = discordEnabled && webhookUrl != null && !webhookUrl.isBlank();
+        this.discordIncludeRejected = discordIncludeRejected;
         this.webhookUrl = webhookUrl == null ? "" : webhookUrl;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
@@ -45,16 +48,18 @@ public final class AuditService implements AutoCloseable {
         if (localEnabled) {
             synchronized (this) {
                 try {
-                    writer.write(line);
-                    writer.newLine();
-                    writer.flush();
+                    if (writer != null) {
+                        writer.write(line);
+                        writer.newLine();
+                        writer.flush();
+                    }
                 } catch (IOException exception) {
                     plugin.getLogger().severe("Failed to write economy audit log: " + exception.getMessage());
                 }
             }
         }
 
-        if (discordEnabled) {
+        if (discordEnabled && (discordIncludeRejected || !"REJECTED".equalsIgnoreCase(entry.status()))) {
             sendDiscordAsync(line);
         }
     }
