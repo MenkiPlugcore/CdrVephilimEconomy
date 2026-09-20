@@ -98,14 +98,21 @@ Target: harga merespons kondisi pasar tanpa menjadi liar.
 - [x] Policy fingerprint invalidation saat parameter market berubah.
 - [x] Fail-closed dynamic layer ke static base price jika market state rusak.
 - [x] Rapid opposite-direction BUY/SELL reversal guard per player/listing.
-- [ ] Statistik harga, stock pressure, dan volume transaksi.
-- [ ] Governance integration untuk perubahan parameter dynamic pricing.
+- [x] Statistik transaction count, unit volume, turnover, effective-price average/range dari audit source of truth.
+- [x] Statistik window 1-720 jam + scoped shop/listing view.
+- [x] Governed `/cve pricing` management commands.
+- [x] Pricing view/manage permissions.
+- [x] Role/scope integration: Staff view, Manager bounded mutation, Treasurer escalation.
+- [x] Manager guardrail untuk target/sensitivity/floor/ceiling.
+- [x] Candidate validation + pricing backup/temp + runtime rollback.
+- [x] Mandatory local admin audit untuk pricing mutation.
+- [ ] Dedicated pricing-parameter approval queue — optional hardening, hanya jika runtime QA membutuhkan.
 - [ ] Final regression + security hardening beta.4.
 - [ ] Finalisasi `0.1.0-beta.4`.
 
-**Status implementasi:** `0.1.0-beta.4-RC2` pada branch `dev/beta.4` — durable sampled market state + anti-churn hardening.
+**Status implementasi:** `0.1.0-beta.4-RC3` pada branch `dev/beta.4` — market statistics + governed pricing management.
 
-Dokumentasi: [`docs/BETA4_RC1.md`](docs/BETA4_RC1.md), [`docs/BETA4_RC2.md`](docs/BETA4_RC2.md), [`docs/BETA4_TEST_PLAN.md`](docs/BETA4_TEST_PLAN.md), dan [`docs/BETA4_RC2_TEST_PLAN.md`](docs/BETA4_RC2_TEST_PLAN.md).
+Dokumentasi: [`docs/BETA4_RC1.md`](docs/BETA4_RC1.md), [`docs/BETA4_RC2.md`](docs/BETA4_RC2.md), [`docs/BETA4_RC3.md`](docs/BETA4_RC3.md), dan test plan RC1-RC3 pada folder `docs/`.
 
 ## beta.5 — RP Market Events
 
