@@ -1,5 +1,5 @@
 name: CdrVephilimEconomy
-version: '0.1.0-beta.2-RC1'
+version: '0.1.0-beta.2-RC2'
 main: id.cdr.vephilimeconomy.CdrVephilimEconomy
 api-version: '1.21.11'
 authors: [MenkiPlugcore]
@@ -23,13 +23,14 @@ permissions:
       cdrvephilimeconomy.shop.delete: true
       cdrvephilimeconomy.shop.bind: true
       cdrvephilimeconomy.shop.toggle: true
+      cdrvephilimeconomy.shop.edit: true
       cdrvephilimeconomy.shop.item: true
       cdrvephilimeconomy.shop.price: true
       cdrvephilimeconomy.shop.stock: true
       cdrvephilimeconomy.shop.manager: true
 
   cdrvephilimeconomy.shop.view:
-    description: View shop list and details.
+    description: View shop list, details, schema, and validation status.
     default: false
   cdrvephilimeconomy.shop.create:
     description: Create shops.
@@ -43,8 +44,11 @@ permissions:
   cdrvephilimeconomy.shop.toggle:
     description: Enable or disable shops.
     default: false
+  cdrvephilimeconomy.shop.edit:
+    description: Edit shop display name and inventory size.
+    default: false
   cdrvephilimeconomy.shop.item:
-    description: Add, remove, and change listing modes.
+    description: Add, remove, move, and change listing modes.
     default: false
   cdrvephilimeconomy.shop.price:
     description: Change listing buy and sell prices.
