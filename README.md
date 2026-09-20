@@ -4,13 +4,14 @@
 
 ## Status
 
-- **Current development:** `0.1.0-beta.4-RC3`
+- **Current stable beta:** `0.1.0-beta.4`
+- **Frozen Controlled Dynamic Pricing baseline:** `0.1.0-beta.4`
 - **Frozen Governance baseline:** `0.1.0-beta.3`
 - **Frozen Shop Management baseline:** `0.1.0-beta.2`
 - **Frozen Core Economy baseline:** `0.1.0-beta.1`
-- Branch development aktif: `dev/beta.4`
+- Branch release: `dev/beta.4`
 
-beta.4 RC3 menambahkan market statistics berbasis transaction audit dan governance khusus untuk perubahan parameter dynamic pricing di atas RC1 bounded pricing + RC2 durable market sampling.
+beta.4 FINAL membekukan bounded dynamic pricing, durable market sampling, anti-churn, market statistics, dan governed pricing management sebagai baseline resmi sebelum beta.5 RP Market Events.
 
 ## Core Economy
 
@@ -39,7 +40,7 @@ ROYAL_TREASURER
 
 Governance memiliki per-shop scope, sensitive-change approval, anti-self-approval, rolling quota/cooldown, dan two-person approval untuk extreme mutation. Frozen contract beta.3 didokumentasikan di [`docs/BETA3_FINAL.md`](docs/BETA3_FINAL.md).
 
-## beta.4 — Controlled Dynamic Pricing
+## beta.4 FINAL — Controlled Dynamic Pricing
 
 Base price tetap berasal dari `shops.yml`. `pricing.yml` hanya mengatur multiplier market per listing.
 
@@ -77,7 +78,7 @@ effective  = round2(basePrice * multiplier)
 
 Stock langka menaikkan harga; stock berlebih menurunkan harga. BUY dan SELL memakai multiplier yang sama sehingga spread base price tetap proporsional.
 
-### Durable Market Sampling RC2
+### Durable Market Sampling
 
 Harga tidak bergerak setiap perubahan stock. Multiplier baru hanya dipersist bila belum ada sample, policy fingerprint berubah, atau quote cooldown sudah lewat **dan** stock bergerak minimal sebesar `min-stock-change-to-resample` dari sample terakhir.
 
@@ -99,7 +100,7 @@ Untuk listing dynamic, player yang baru BUY tidak dapat langsung SELL listing ya
 
 GUI menyimpan quote yang dilihat player. Transaction engine menghitung ulang quote sebelum mutation. Bila sampled quote berubah, transaksi menjadi `PRICE_CHANGED` sebelum uang, item, atau stock berubah, lalu GUI direfresh.
 
-### RC3 Market Statistics
+### Market Statistics
 
 ```text
 /cve pricing stats [shop] [listing] [hours]
@@ -107,7 +108,7 @@ GUI menyimpan quote yang dilihat player. Transaction engine menghitung ulang quo
 
 Statistik dibaca dari `logs/audit.log`, bukan ledger transaksi kedua. Hanya `status=SUCCESS` yang dihitung. Output mencakup BUY/SELL transaction count, unit volume, value, average effective unit price, price range, net stock flow, turnover, serta first/last transaction pada window. Default 24 jam, maksimum 720 jam.
 
-### RC3 Governed Pricing Management
+### Governed Pricing Management
 
 ```text
 /cve pricing status
@@ -137,7 +138,9 @@ max-multiplier     : 1.00..2.00, delta <= 0.25
 enabled            : toggle listing dalam scope
 ```
 
-Permission baru:
+Dedicated approval queue khusus pricing parameter **deferred** dan bukan blocker beta.4 FINAL; perubahan di luar Manager guardrail dieskalasikan ke Royal Treasurer/admin/operator override.
+
+Permission pricing:
 
 ```text
 cdrvephilimeconomy.pricing.view
@@ -176,6 +179,7 @@ governance-dual-approval.yml
 - [`docs/BETA1_FINAL.md`](docs/BETA1_FINAL.md)
 - [`docs/BETA2_FINAL.md`](docs/BETA2_FINAL.md)
 - [`docs/BETA3_FINAL.md`](docs/BETA3_FINAL.md)
+- [`docs/BETA4_FINAL.md`](docs/BETA4_FINAL.md)
 - [`docs/BETA4_RC1.md`](docs/BETA4_RC1.md)
 - [`docs/BETA4_RC2.md`](docs/BETA4_RC2.md)
 - [`docs/BETA4_RC3.md`](docs/BETA4_RC3.md)
@@ -185,8 +189,8 @@ governance-dual-approval.yml
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - [`docs/ECONOMY_DESIGN.md`](docs/ECONOMY_DESIGN.md)
 
-## Next beta.4 Update
+## Next Development Phase
 
-Sesudah RC3 QA, fokus berikutnya adalah **final beta.4 regression/security hardening**. Dedicated approval queue khusus parameter pricing dapat ditambahkan hanya bila runtime QA menunjukkan kebutuhan; RC3 saat ini memakai role/scope + bounded Manager guardrail dan Treasurer/admin escalation.
+Setelah `dev/beta.4` dipromosikan ke `main`, branch beta.4 dibekukan. Fase berikutnya adalah **beta.5 — RP Market Events**: market modifier sementara, scarcity event, bonus harga beli kerajaan, event supply, broadcast RP, dan event-history ekonomi.
 
 Plugin dikembangkan oleh **MenkiPlugcore** untuk **Vephilim Roleplay**.
