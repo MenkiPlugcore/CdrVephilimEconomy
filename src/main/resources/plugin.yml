@@ -1,0 +1,13 @@
+name: CdrVephilimEconomy
+version: '${project.version}'
+main: id.cdr.vephilimeconomy.CdrVephilimEconomy
+api-version: '1.21.11'
+authors: [MenkiPlugcore]
+description: NPC-first economy for Vephilim Roleplay.
+website: https://github.com/MenkiPlugcore/CdrVephilimEconomy
+depend: [Citizens, Vault]
+
+permissions:
+  cdrvephilimeconomy.admin:
+    description: Administrative permission for CdrVephilimEconomy.
+    default: op
