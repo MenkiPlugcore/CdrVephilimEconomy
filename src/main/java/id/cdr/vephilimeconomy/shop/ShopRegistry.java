@@ -38,6 +38,14 @@ public final class ShopRegistry {
             throw new IOException("Invalid YAML in shops.yml: " + exception.getMessage(), exception);
         }
 
+        int schema = ShopsSchemaManager.detectSchema(yaml);
+        ShopsSchemaManager.validateSupported(schema);
+        if (schema < ShopsSchemaManager.CURRENT_SCHEMA && logger != null) {
+            logger.warning("shops.yml masih memakai legacy schema v" + schema
+                    + "; ShopAdminService akan memigrasikan file ke v" + ShopsSchemaManager.CURRENT_SCHEMA
+                    + " dengan backup sebelum perubahan administratif berikutnya.");
+        }
+
         ConfigurationSection root = yaml.getConfigurationSection("shops");
         if (root == null) {
             throw new IOException("shops.yml tidak memiliki section 'shops'.");
@@ -82,7 +90,7 @@ public final class ShopRegistry {
         logger.info("Loaded " + shopCount() + " shop definition(s), "
                 + activeBindingCount() + " active NPC binding(s), "
                 + rejectedDefinitions + " rejected definition(s), "
-                + configurationWarnings + " configuration warning(s).");
+                + configurationWarnings + " configuration warning(s), schema=v" + schema + ".");
     }
 
     private Shop parseShop(String shopId, ConfigurationSection section) {
