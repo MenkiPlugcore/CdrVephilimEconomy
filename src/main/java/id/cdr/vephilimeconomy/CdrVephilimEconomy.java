@@ -57,12 +57,17 @@ public final class CdrVephilimEconomy extends JavaPlugin {
             return;
         }
 
+        int maxAmount = clamp(getConfig().getInt("transaction.max-amount", 64), 1, 2304);
+        int bulkAmount = clamp(getConfig().getInt("transaction.bulk-amount", 16), 1, maxAmount);
+        long cooldownMillis = Math.max(0L, getConfig().getLong("transaction.cooldown-ms", 250L));
+
         TransactionService transactions = new TransactionService(
                 economy,
                 stockRepository,
                 auditService,
                 getLogger(),
-                getConfig().getLong("transaction.cooldown-ms", 250L)
+                cooldownMillis,
+                maxAmount
         );
 
         ShopGuiService gui = new ShopGuiService(stockRepository, economy);
@@ -74,12 +79,13 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                         gui,
                         transactions,
                         economy,
-                        getConfig().getInt("transaction.bulk-amount", 16)
+                        bulkAmount
                 ),
                 this
         );
 
         getLogger().info("CdrVephilimEconomy beta.1 core enabled: NPC-only shop, static pricing, stock, guarded transactions, audit.");
+        getLogger().info("Transaction guard: cooldown=" + cooldownMillis + "ms, bulk=" + bulkAmount + ", max=" + maxAmount + ".");
     }
 
     @Override
@@ -110,5 +116,9 @@ public final class CdrVephilimEconomy extends JavaPlugin {
         if (!file.exists()) {
             saveResource(name, false);
         }
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 }
