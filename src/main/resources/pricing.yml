@@ -4,7 +4,7 @@ meta:
 # Master switch beta.4. Default OFF agar upgrade dari beta.3 tidak mengubah harga.
 enabled: false
 
-# RC2 market stability.
+# Market stability beta.4 FINAL.
 # Quote dinamis tidak mengikuti setiap perubahan stock secara instan. Harga hanya
 # disampling ulang setelah cooldown selesai DAN stock bergerak cukup jauh dari
 # sample terakhir. Sample multiplier disimpan durable di market-state.yml.
