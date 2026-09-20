@@ -78,12 +78,33 @@ Dokumen ini dipakai sebelum `beta.1` dianggap siap dipasang sebagai build uji Ve
 - [ ] Config `initial-stock` tidak mereset stock runtime setelah restart.
 - [ ] Economy failure tidak menghasilkan item gratis.
 - [ ] Kegagalan persistence menghasilkan audit `FAILED` dan mencoba rollback.
+- [ ] Player quit menghapus cooldown state tanpa mempengaruhi stock/saldo.
+
+## Stock Persistence / Recovery
+
+- [ ] Setiap persist menghasilkan `stock.yml` yang memiliki `meta.schema` dan `meta.updated-at`.
+- [ ] `stock.yml.bak` dibuat sebagai recovery snapshot.
+- [ ] Setelah transaksi sukses, nilai pada `stock.yml` sesuai nilai runtime.
+- [ ] Temporary snapshot diverifikasi sebelum menggantikan file utama.
+- [ ] Restart normal tidak mengubah stock yang sudah tersimpan.
+- [ ] Jika `stock.yml` rusak secara sintaks YAML, plugin memulihkan dari `stock.yml.bak`.
+- [ ] Jika `stock.yml` hilang tetapi backup valid tersedia, plugin memulihkan file utama dari backup.
+- [ ] Jika file utama dan backup sama-sama invalid/tidak dapat dipercaya, plugin disable daripada diam-diam memakai `initial-stock`.
+- [ ] Stock numerik di bawah 0 di-clamp ke 0 dan snapshot diperbaiki.
+- [ ] Stock numerik di atas `max-stock` di-clamp ke `max-stock` dan snapshot diperbaiki.
+- [ ] Stock non-integer/string pada listing valid tidak digunakan sebagai stock runtime dan dinormalisasi ke `initial-stock`.
 
 ## Audit
 
-- [ ] Transaksi sukses tercatat di `plugins/CdrVephilimEconomy/logs/audit.log`.
-- [ ] Log mencatat transaction ID, player, shop, listing, tipe, jumlah, total, dan stock before/after.
-- [ ] Jika Discord audit diaktifkan, webhook menerima log tanpa memblokir thread transaksi.
+- [ ] Transaksi sukses tercatat di `plugins/CdrVephilimEconomy/logs/audit.log` dengan status `SUCCESS`.
+- [ ] Internal transaction failure tercatat dengan status `FAILED`.
+- [ ] Jika `audit.log-rejected-transactions: true`, saldo kurang, stock kurang, item kurang, inventory penuh, max-stock, dan mode tidak diizinkan tercatat sebagai `REJECTED`.
+- [ ] `BUSY` tidak tercatat secara default ketika `audit.log-busy-rejections: false`.
+- [ ] Mengaktifkan `audit.log-busy-rejections` membuat BUSY/cooldown rejection ikut tercatat.
+- [ ] Log mencatat transaction ID, player, shop, listing, tipe, jumlah request, unit price, total, dan stock before/after.
+- [ ] Jika Discord audit diaktifkan, webhook menerima SUCCESS/FAILED tanpa memblokir thread transaksi.
+- [ ] `audit.discord.include-rejected: false` mencegah rejection biasa memenuhi Discord.
+- [ ] Mengaktifkan `audit.discord.include-rejected` membuat `REJECTED` ikut dikirim ke Discord.
 - [ ] Webhook URL tidak pernah ditulis ke console/audit log.
 
 ## Restart / Failure Tests
@@ -91,8 +112,9 @@ Dokumen ini dipakai sebelum `beta.1` dianggap siap dipasang sebagai build uji Ve
 - [ ] Tutup GUI tanpa transaksi: tidak ada perubahan stock/saldo.
 - [ ] Player disconnect setelah transaksi selesai: data tetap konsisten.
 - [ ] Restart normal melakukan flush stock tanpa error.
-- [ ] `stock.yml` rusak/tidak valid tidak menyebabkan dupe; plugin harus fail-safe atau meng-clamp nilai yang dapat dibaca.
+- [ ] Simulasikan `stock.yml` corrupt dengan backup valid: recovery berhasil dan startup log memberi warning recovery.
+- [ ] Simulasikan `stock.yml` dan backup corrupt: plugin fail-closed/disable dan tidak menghasilkan stock reset diam-diam.
 
 ## Exit Criteria beta.1
 
-`beta.1` baru dianggap lulus jika jalur BUY/SELL utama, NPC-only proximity guard, persistence stock, config validation, dan skenario anti-dupe di atas lolos di server uji. Fitur governance, admin GUI, dynamic pricing, dan market event tetap di luar scope beta.1.
+`beta.1` baru dianggap lulus jika jalur BUY/SELL utama, NPC-only proximity guard, persistence/recovery stock, config validation, audit trail, dan skenario anti-dupe di atas lolos di server uji. Fitur governance, admin GUI, dynamic pricing, dan market event tetap di luar scope beta.1.
