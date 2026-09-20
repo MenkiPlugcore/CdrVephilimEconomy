@@ -10,19 +10,25 @@ import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
 /**
- * beta.4 RC1 controlled dynamic-pricing quote engine.
+ * Controlled dynamic-pricing quote engine.
  *
- * <p>The engine is intentionally stateless: the effective quote is derived from
- * the current persisted stock snapshot and a bounded per-listing policy. RC1
- * does not write price state back to shops.yml and therefore cannot corrupt the
- * frozen beta.2 shop-management baseline.</p>
+ * <p>RC2 keeps market multipliers durable in market-state.yml and only
+ * resamples after a configured cooldown plus meaningful stock movement.
+ * Base prices remain owned by shops.yml. A broken market-state file blocks
+ * dynamic pricing and falls back to static base prices instead of silently
+ * creating a new market state.</p>
  */
 public final class DynamicPricingService {
     public static final int SCHEMA_VERSION = 1;
@@ -32,9 +38,14 @@ public final class DynamicPricingService {
     private final File file;
     private final Logger logger;
     private final Map<String, Policy> policies = new LinkedHashMap<>();
+    private final Map<String, DirectionStamp> recentDirections = new ConcurrentHashMap<>();
 
+    private MarketStateRepository marketState;
     private boolean globalEnabled;
     private int configurationWarnings;
+    private long quoteCooldownMillis = 30_000L;
+    private int minStockChangeToResample = 8;
+    private long reversalCooldownMillis = 15_000L;
 
     public DynamicPricingService(File file, Logger logger) {
         this.file = file;
@@ -43,6 +54,7 @@ public final class DynamicPricingService {
 
     public void load(ShopRegistry registry) throws IOException {
         policies.clear();
+        recentDirections.clear();
         configurationWarnings = 0;
 
         YamlConfiguration yaml = new YamlConfiguration();
@@ -57,6 +69,10 @@ public final class DynamicPricingService {
             throw new IOException("pricing.yml schema tidak didukung: v" + schema
                     + " (expected v" + SCHEMA_VERSION + ")");
         }
+
+        readStabilitySettings(yaml);
+        marketState = new MarketStateRepository(file.getParentFile(), logger);
+        marketState.load();
 
         globalEnabled = yaml.getBoolean("enabled", false);
         ConfigurationSection shops = yaml.getConfigurationSection("shops");
@@ -96,39 +112,106 @@ public final class DynamicPricingService {
 
         logger.info("Dynamic pricing loaded: enabled=" + globalEnabled
                 + ", policies=" + policies.size()
-                + ", warnings=" + configurationWarnings + ".");
+                + ", warnings=" + configurationWarnings
+                + ", quoteCooldown=" + quoteCooldownMillis + "ms"
+                + ", minStockDelta=" + minStockChangeToResample
+                + ", reversalCooldown=" + reversalCooldownMillis + "ms"
+                + ", marketState=" + marketState.shortStatus() + ".");
     }
 
     public PriceQuote quote(Shop shop, ShopListing listing, int currentStock, TransactionType type) {
         double basePrice = type == TransactionType.BUY ? listing.buyPrice() : listing.sellPrice();
         Policy policy = policies.get(key(shop.id(), listing.id()));
+        double currentRatio = listing.maxStock() <= 0
+                ? 0.0D
+                : clamp((double) currentStock / (double) listing.maxStock(), 0.0D, 1.0D);
 
         if (!globalEnabled || policy == null || !policy.enabled()
-                || listing.maxStock() <= 0 || basePrice <= 0.0D) {
-            return PriceQuote.staticPrice(basePrice, listing.maxStock() <= 0
-                    ? 0.0D
-                    : clamp((double) currentStock / (double) listing.maxStock(), 0.0D, 1.0D));
+                || listing.maxStock() <= 0 || basePrice <= 0.0D
+                || marketState == null || !marketState.healthy()) {
+            return PriceQuote.staticPrice(basePrice, currentRatio);
         }
 
-        double stockRatio = clamp((double) currentStock / (double) listing.maxStock(), 0.0D, 1.0D);
-        double pressure;
-        if (stockRatio <= policy.targetStockRatio()) {
-            pressure = (policy.targetStockRatio() - stockRatio)
-                    / Math.max(policy.targetStockRatio(), EPSILON);
-        } else {
-            pressure = -((stockRatio - policy.targetStockRatio())
-                    / Math.max(1.0D - policy.targetStockRatio(), EPSILON));
+        double desiredPressure = pressureFor(currentRatio, policy);
+        double desiredRawMultiplier = 1.0D + (policy.sensitivity() * desiredPressure);
+        double desiredMultiplier = clamp(desiredRawMultiplier, policy.minMultiplier(), policy.maxMultiplier());
+
+        MarketStateRepository.Resolution resolution = marketState.resolve(
+                shop.id(),
+                listing.id(),
+                currentStock,
+                desiredMultiplier,
+                policyFingerprint(policy, listing),
+                System.currentTimeMillis(),
+                quoteCooldownMillis,
+                minStockChangeToResample
+        );
+        if (!resolution.healthy()) {
+            return PriceQuote.staticPrice(basePrice, currentRatio);
         }
 
-        pressure = clamp(pressure, -1.0D, 1.0D);
-        double rawMultiplier = 1.0D + (policy.sensitivity() * pressure);
-        double multiplier = clamp(rawMultiplier, policy.minMultiplier(), policy.maxMultiplier());
+        double multiplier = clamp(resolution.multiplier(), policy.minMultiplier(), policy.maxMultiplier());
+        double sampledRatio = clamp((double) resolution.sampledStock() / (double) listing.maxStock(), 0.0D, 1.0D);
+        double sampledPressure = pressureFor(sampledRatio, policy);
         double effective = roundCurrency(basePrice * multiplier);
         if (basePrice > 0.0D && effective <= 0.0D) {
             effective = 0.01D;
         }
 
-        return new PriceQuote(basePrice, effective, multiplier, stockRatio, pressure, true);
+        return new PriceQuote(basePrice, effective, multiplier, sampledRatio,
+                sampledPressure, true);
+    }
+
+    /**
+     * Blocks a fast BUY -> SELL or SELL -> BUY reversal by the same player on
+     * the same dynamic listing. Same-direction demand is not blocked here.
+     */
+    public ChurnDecision checkChurn(UUID playerId, Shop shop, ShopListing listing,
+                                    TransactionType requestedType) {
+        if (playerId == null || !isDynamic(shop.id(), listing.id()) || reversalCooldownMillis <= 0L) {
+            return ChurnDecision.allowed();
+        }
+
+        long now = System.currentTimeMillis();
+        DirectionStamp previous = recentDirections.get(directionKey(playerId, shop.id(), listing.id()));
+        if (previous == null || previous.type() == requestedType) {
+            return ChurnDecision.allowed();
+        }
+
+        long elapsed = Math.max(0L, now - previous.atMillis());
+        if (elapsed >= reversalCooldownMillis) {
+            return ChurnDecision.allowed();
+        }
+
+        long remaining = reversalCooldownMillis - elapsed;
+        return ChurnDecision.blocked(remaining,
+                "rapid opposite-direction market churn: previous=" + previous.type()
+                        + "; requested=" + requestedType
+                        + "; remainingMs=" + remaining);
+    }
+
+    public void recordSuccessfulTransaction(UUID playerId, Shop shop, ShopListing listing,
+                                            TransactionType type) {
+        if (playerId == null || !isDynamic(shop.id(), listing.id()) || reversalCooldownMillis <= 0L) {
+            return;
+        }
+        recentDirections.put(directionKey(playerId, shop.id(), listing.id()),
+                new DirectionStamp(type, System.currentTimeMillis()));
+        if (recentDirections.size() > 10_000) {
+            purgeExpiredDirections(System.currentTimeMillis());
+        }
+    }
+
+    public void forgetPlayer(UUID playerId) {
+        if (playerId == null || recentDirections.isEmpty()) {
+            return;
+        }
+        String prefix = playerId.toString() + "|";
+        recentDirections.keySet().removeIf(key -> key.startsWith(prefix));
+    }
+
+    public void clearEphemeralState() {
+        recentDirections.clear();
     }
 
     public boolean globalEnabled() {
@@ -149,12 +232,55 @@ public final class DynamicPricingService {
 
     public boolean isDynamic(String shopId, String listingId) {
         Policy policy = policies.get(key(shopId, listingId));
-        return globalEnabled && policy != null && policy.enabled();
+        return globalEnabled
+                && policy != null
+                && policy.enabled()
+                && marketState != null
+                && marketState.healthy();
     }
 
     public String shortStatus() {
-        return (globalEnabled ? "ON" : "OFF")
-                + "(" + enabledPolicyCount() + "/" + policies.size() + " policies)";
+        String mode;
+        if (!globalEnabled) {
+            mode = "OFF";
+        } else if (marketState == null || !marketState.healthy()) {
+            mode = "BLOCKED";
+        } else {
+            mode = "ON";
+        }
+        return mode
+                + "(" + enabledPolicyCount() + "/" + policies.size() + " policies"
+                + ", state=" + (marketState == null ? "UNAVAILABLE" : marketState.shortStatus())
+                + ", sample=" + (quoteCooldownMillis / 1000L) + "s"
+                + ", reverse=" + (reversalCooldownMillis / 1000L) + "s)";
+    }
+
+    public boolean marketStateHealthy() {
+        return marketState != null && marketState.healthy();
+    }
+
+    public int marketSampleCount() {
+        return marketState == null ? 0 : marketState.sampleCount();
+    }
+
+    private void readStabilitySettings(ConfigurationSection yaml) {
+        int quoteCooldownSeconds = yaml.getInt("stability.quote-cooldown-seconds", 30);
+        int minStockDelta = yaml.getInt("stability.min-stock-change-to-resample", 8);
+        int reversalCooldownSeconds = yaml.getInt("stability.reversal-cooldown-seconds", 15);
+
+        if (quoteCooldownSeconds < 1 || quoteCooldownSeconds > 3600) {
+            throw new IllegalArgumentException("stability.quote-cooldown-seconds harus 1-3600");
+        }
+        if (minStockDelta < 1 || minStockDelta > 2304) {
+            throw new IllegalArgumentException("stability.min-stock-change-to-resample harus 1-2304");
+        }
+        if (reversalCooldownSeconds < 0 || reversalCooldownSeconds > 600) {
+            throw new IllegalArgumentException("stability.reversal-cooldown-seconds harus 0-600");
+        }
+
+        quoteCooldownMillis = quoteCooldownSeconds * 1000L;
+        minStockChangeToResample = minStockDelta;
+        reversalCooldownMillis = reversalCooldownSeconds * 1000L;
     }
 
     private Policy parsePolicy(String shopId, String listingId, ConfigurationSection section) {
@@ -188,6 +314,18 @@ public final class DynamicPricingService {
         return new Policy(enabled, target, sensitivity, minMultiplier, maxMultiplier);
     }
 
+    private static double pressureFor(double stockRatio, Policy policy) {
+        double pressure;
+        if (stockRatio <= policy.targetStockRatio()) {
+            pressure = (policy.targetStockRatio() - stockRatio)
+                    / Math.max(policy.targetStockRatio(), EPSILON);
+        } else {
+            pressure = -((stockRatio - policy.targetStockRatio())
+                    / Math.max(1.0D - policy.targetStockRatio(), EPSILON));
+        }
+        return clamp(pressure, -1.0D, 1.0D);
+    }
+
     private double finite(double value, String field, String shopId, String listingId) {
         if (!Double.isFinite(value)) {
             throw new IllegalArgumentException("pricing " + field + " harus finite untuk "
@@ -199,6 +337,30 @@ public final class DynamicPricingService {
     private void warn(String message) {
         configurationWarnings++;
         logger.warning(message);
+    }
+
+    private void purgeExpiredDirections(long nowMillis) {
+        long retention = Math.max(60_000L, reversalCooldownMillis * 4L);
+        recentDirections.entrySet().removeIf(entry -> nowMillis - entry.getValue().atMillis() > retention);
+    }
+
+    private static String policyFingerprint(Policy policy, ShopListing listing) {
+        String payload = policy.targetStockRatio() + "|"
+                + policy.sensitivity() + "|"
+                + policy.minMultiplier() + "|"
+                + policy.maxMultiplier() + "|"
+                + listing.maxStock();
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest(payload.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(bytes.length * 2);
+            for (byte value : bytes) {
+                hex.append(String.format(Locale.ROOT, "%02x", value & 0xff));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 unavailable", exception);
+        }
     }
 
     private static String normalizeId(String raw, String type) {
@@ -214,6 +376,10 @@ public final class DynamicPricingService {
         return (shopId == null ? "" : shopId.trim().toLowerCase(Locale.ROOT))
                 + "|"
                 + (listingId == null ? "" : listingId.trim().toLowerCase(Locale.ROOT));
+    }
+
+    private static String directionKey(UUID playerId, String shopId, String listingId) {
+        return playerId + "|" + key(shopId, listingId);
     }
 
     private static double roundCurrency(double value) {
@@ -246,6 +412,19 @@ public final class DynamicPricingService {
     ) {
         private static PriceQuote staticPrice(double price, double stockRatio) {
             return new PriceQuote(price, price, 1.0D, stockRatio, 0.0D, false);
+        }
+    }
+
+    private record DirectionStamp(TransactionType type, long atMillis) {
+    }
+
+    public record ChurnDecision(boolean allowed, long remainingMillis, String detail) {
+        private static ChurnDecision allowed() {
+            return new ChurnDecision(true, 0L, "OK");
+        }
+
+        private static ChurnDecision blocked(long remainingMillis, String detail) {
+            return new ChurnDecision(false, Math.max(0L, remainingMillis), detail);
         }
     }
 }
