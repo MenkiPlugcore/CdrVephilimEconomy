@@ -90,6 +90,7 @@ public final class ShopRegistry {
         int npcId = section.getInt("npc-id", -1);
         int size = section.getInt("size", 27);
         boolean enabled = section.getBoolean("enabled", true);
+        String manager = section.getString("manager", "");
 
         if (displayName == null || displayName.isBlank()) {
             throw new IllegalArgumentException("display-name tidak boleh kosong");
@@ -99,6 +100,9 @@ public final class ShopRegistry {
         }
         if (size < 9 || size > 54 || size % 9 != 0) {
             throw new IllegalArgumentException("size harus kelipatan 9 antara 9-54");
+        }
+        if (manager != null && manager.length() > 64) {
+            throw new IllegalArgumentException("manager maksimal 64 karakter");
         }
 
         Map<String, ShopListing> listings = new LinkedHashMap<>();
@@ -132,7 +136,8 @@ public final class ShopRegistry {
             }
         }
 
-        return new Shop(shopId, displayName, npcId, size, enabled, listings);
+        return new Shop(shopId, displayName, npcId, size, enabled,
+                manager == null ? "" : manager.trim(), listings);
     }
 
     private ShopListing parseListing(String listingId, ConfigurationSection section) {
