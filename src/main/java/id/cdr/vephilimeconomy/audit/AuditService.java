@@ -16,6 +16,7 @@ import java.time.Duration;
 public final class AuditService implements AutoCloseable {
     private final JavaPlugin plugin;
     private final boolean localEnabled;
+    private final boolean discordRequested;
     private final boolean discordEnabled;
     private final boolean discordIncludeRejected;
     private final String webhookUrl;
@@ -26,6 +27,7 @@ public final class AuditService implements AutoCloseable {
                         boolean discordIncludeRejected, String webhookUrl) throws IOException {
         this.plugin = plugin;
         this.localEnabled = localEnabled;
+        this.discordRequested = discordEnabled;
         this.discordEnabled = discordEnabled && webhookUrl != null && !webhookUrl.isBlank();
         this.discordIncludeRejected = discordIncludeRejected;
         this.webhookUrl = webhookUrl == null ? "" : webhookUrl;
@@ -61,6 +63,39 @@ public final class AuditService implements AutoCloseable {
 
         if (discordEnabled && (discordIncludeRejected || !"REJECTED".equalsIgnoreCase(entry.status()))) {
             sendDiscordAsync(line);
+        }
+    }
+
+    public boolean localEnabled() {
+        return localEnabled;
+    }
+
+    public synchronized boolean localWriterReady() {
+        return !localEnabled || writer != null;
+    }
+
+    public boolean discordRequested() {
+        return discordRequested;
+    }
+
+    public boolean discordEnabled() {
+        return discordEnabled;
+    }
+
+    public boolean discordConfigurationValid() {
+        if (!discordRequested) {
+            return true;
+        }
+        if (webhookUrl.isBlank()) {
+            return false;
+        }
+        try {
+            URI uri = URI.create(webhookUrl);
+            String scheme = uri.getScheme();
+            return ("https".equalsIgnoreCase(scheme) || "http".equalsIgnoreCase(scheme))
+                    && uri.getHost() != null && !uri.getHost().isBlank();
+        } catch (IllegalArgumentException exception) {
+            return false;
         }
     }
 
