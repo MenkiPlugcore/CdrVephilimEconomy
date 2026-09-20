@@ -19,10 +19,12 @@ public final class ShopRegistry {
 
     private final Map<String, Shop> shopsById = new LinkedHashMap<>();
     private final Map<Integer, Shop> shopsByNpcId = new LinkedHashMap<>();
+    private int rejectedDefinitions;
 
     public void load(File file, Logger logger) {
         shopsById.clear();
         shopsByNpcId.clear();
+        rejectedDefinitions = 0;
 
         YamlConfiguration yaml = YamlConfiguration.loadConfiguration(file);
         ConfigurationSection root = yaml.getConfigurationSection("shops");
@@ -31,7 +33,6 @@ public final class ShopRegistry {
             return;
         }
 
-        int rejected = 0;
         for (String rawShopId : root.getKeys(false)) {
             ConfigurationSection section = root.getConfigurationSection(rawShopId);
             if (section == null) {
@@ -61,13 +62,13 @@ public final class ShopRegistry {
                     logger.warning("Shop '" + shop.id() + "' enabled tetapi npc-id belum valid. Shop tidak dibind ke NPC.");
                 }
             } catch (RuntimeException exception) {
-                rejected++;
+                rejectedDefinitions++;
                 logger.severe("Shop '" + rawShopId + "' ditolak: " + exception.getMessage());
             }
         }
 
-        logger.info("Loaded " + shopsById.size() + " shop definition(s), "
-                + shopsByNpcId.size() + " active NPC binding(s), " + rejected + " rejected definition(s).");
+        logger.info("Loaded " + shopCount() + " shop definition(s), "
+                + activeBindingCount() + " active NPC binding(s), " + rejectedDefinitions + " rejected definition(s).");
     }
 
     private Shop parseShop(String shopId, ConfigurationSection section) {
@@ -161,6 +162,26 @@ public final class ShopRegistry {
 
     public Collection<Shop> all() {
         return Collections.unmodifiableCollection(shopsById.values());
+    }
+
+    public int shopCount() {
+        return shopsById.size();
+    }
+
+    public int enabledShopCount() {
+        return (int) shopsById.values().stream().filter(Shop::enabled).count();
+    }
+
+    public int activeBindingCount() {
+        return shopsByNpcId.size();
+    }
+
+    public int listingCount() {
+        return shopsById.values().stream().mapToInt(shop -> shop.listings().size()).sum();
+    }
+
+    public int rejectedDefinitionCount() {
+        return rejectedDefinitions;
     }
 
     private static String normalizeId(String raw, String type) {
