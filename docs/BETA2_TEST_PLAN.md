@@ -1,31 +1,59 @@
 # beta.2 Test Plan — CdrVephilimEconomy
 
-Target build: `0.1.0-beta.2-RC1`.
+Target build: `0.1.0-beta.2-RC2`.
 
-beta.2 dibangun di atas frozen baseline `0.1.0-beta.1`. Fokus RC1 adalah **shop management yang transactional, permission-aware, dan audited** tanpa mengubah core BUY/SELL engine.
+beta.2 dibangun di atas frozen baseline `0.1.0-beta.1`. RC1 management smoke test sudah dinyatakan aman oleh user. Fokus RC2 adalah **formal shops.yml schema migration, Discord administrative audit, management QoL, dan regression RC1**.
 
 ## Preconditions
 
 - Paper 1.21.11 / Java 21.
 - Citizens + Vault + economy provider aktif.
-- `0.1.0-beta.2-RC1` terpasang.
+- `0.1.0-beta.2-RC2` terpasang.
 - `/cve doctor` tidak menunjukkan failure core sebelum pengujian management dimulai.
 
-## Read-only Commands
+## Read-only / Diagnostics
 
 - [ ] `/cve shop list` menampilkan semua shop runtime.
 - [ ] `/cve shop info blacksmith` menampilkan enabled state, NPC ID, manager, listing, price, dan stock runtime.
-- [ ] User tanpa `cdrvephilimeconomy.shop.view` tidak dapat melihat detail melalui command management.
+- [ ] `/cve shop schema` menampilkan schema current `v2/v2` setelah migration.
+- [ ] `/cve shop validate` strict-validate schema + shop/listing tanpa mengubah runtime stock.
+- [ ] User tanpa `cdrvephilimeconomy.shop.view` tidak dapat memakai read-only management diagnostics.
+
+## shops.yml Schema v2 / Migration
+
+- [ ] Default RC2 `shops.yml` memiliki `meta.schema: 2`.
+- [ ] File beta.1/RC1 tanpa `meta.schema` dibaca sebagai legacy schema v1.
+- [ ] Saat ShopAdminService mulai, legacy v1 dimigrasikan otomatis menjadi v2.
+- [ ] Migration membuat `shops.yml.schema-v1.bak` sebelum mengganti file aktif.
+- [ ] Migration menambahkan `manager: ""` pada shop lama bila field belum ada.
+- [ ] Migration mempertahankan seluruh shop, listing, harga, mode, NPC ID, enabled state, dan stock runtime.
+- [ ] `meta.migrated-from: 1`, `meta.migrated-at`, dan `meta.updated-at` ditulis saat migration.
+- [ ] Setiap mutation RC2 mempertahankan `meta.schema: 2` dan memperbarui `meta.updated-at`.
+- [ ] `meta.schema` non-integer ditolak.
+- [ ] Schema `0`/invalid ditolak.
+- [ ] Schema lebih baru dari plugin, misalnya `meta.schema: 99`, ditolak fail-closed oleh ShopRegistry.
+- [ ] Core transaksi tidak diam-diam menulis ulang file schema masa depan yang tidak dipahami.
 
 ## Create / Delete Shop
 
-- [ ] `/cve shop create farmer 27 Farmer Kerajaan` membuat shop baru dalam keadaan disabled dan `npc-id: -1`.
+- [ ] `/cve shop create farmer 27 Farmer Kerajaan` membuat shop baru disabled dan `npc-id: -1`.
 - [ ] Shop baru langsung muncul di `/cve shop list` tanpa restart.
 - [ ] Duplicate shop ID ditolak dan runtime lama tetap aktif.
 - [ ] Shop ID invalid ditolak.
 - [ ] Inventory size non-multiple-of-9 atau di luar 9-54 ditolak.
 - [ ] `/cve shop delete farmer` tanpa `CONFIRM` tidak menghapus shop.
 - [ ] `/cve shop delete farmer CONFIRM` menghapus shop setelah candidate validation dan runtime reload.
+
+## RC2 Shop QoL
+
+- [ ] `/cve shop name <shop> <display name>` mengganti display name tanpa restart.
+- [ ] Display name kosong atau >128 karakter ditolak.
+- [ ] `/cve shop size <shop> 36` mengubah GUI size jika semua listing masih berada dalam range.
+- [ ] Mengecilkan size sehingga ada listing di luar range ditolak dan runtime lama tetap aktif.
+- [ ] `/cve shop slot <shop> <listing> <slot>` memindahkan listing tanpa restart.
+- [ ] Slot duplicate ditolak.
+- [ ] Slot di luar size GUI ditolak.
+- [ ] Permission `cdrvephilimeconomy.shop.edit` hanya memberi perubahan display name/size, bukan stock/price/delete.
 
 ## Citizens Binding / Toggle
 
@@ -42,9 +70,7 @@ beta.2 dibangun di atas frozen baseline `0.1.0-beta.1`. Fokus RC1 adalah **shop 
 - [ ] Manager tampil pada `/cve shop list` dan `/cve shop info`.
 - [ ] Manager metadata tidak otomatis memberi permission transaksi/admin.
 
-## Listing CRUD
-
-Syntax RC1:
+## Listing CRUD / Price / Mode
 
 ```text
 /cve shop additem <shop> <listing> <material|hand> <slot> <mode> <buy> <sell> <initial> <max>
@@ -57,72 +83,87 @@ Syntax RC1:
 - [ ] BUY mode dengan buy-price <= 0 ditolak.
 - [ ] SELL mode dengan sell-price <= 0 ditolak.
 - [ ] Stock bounds invalid ditolak.
-- [ ] `/cve shop removeitem <shop> <listing>` tanpa `CONFIRM` tidak menghapus listing.
-- [ ] `/cve shop removeitem <shop> <listing> CONFIRM` menghapus listing dan runtime stock entry terkait.
-
-## Price / Mode
-
-- [ ] `/cve shop price <shop> <listing> buy <value>` menerapkan harga BUY tanpa restart.
-- [ ] `/cve shop price <shop> <listing> sell <value>` menerapkan harga SELL tanpa restart.
+- [ ] `/cve shop removeitem ...` wajib `CONFIRM`.
+- [ ] `/cve shop price ... buy|sell <value>` menerapkan harga tanpa restart.
 - [ ] Harga negatif/NaN/Infinity ditolak.
-- [ ] `/cve shop mode <shop> <listing> BUY|SELL|BUY_SELL` menerapkan arah transaksi baru.
+- [ ] `/cve shop mode ... BUY|SELL|BUY_SELL` menerapkan arah transaksi baru.
 - [ ] Candidate invalid tidak mengganti runtime lama.
 
 ## Stock Management
 
 - [ ] `/cve shop stock <shop> <listing> set <amount>` mengubah stock runtime + persisted stock.
-- [ ] `/cve shop stock <shop> <listing> add <amount>` bekerja selama hasil <= max-stock.
-- [ ] `/cve shop stock <shop> <listing> remove <amount>` bekerja selama hasil >= 0.
-- [ ] Stock admin tidak pernah menjadi negatif atau melewati max-stock.
+- [ ] `add` bekerja selama hasil <= max-stock.
+- [ ] `remove` bekerja selama hasil >= 0.
+- [ ] Stock admin tidak pernah negatif atau melewati max-stock.
 - [ ] Runtime stock mutation ditolak ketika economy safety stop aktif.
-- [ ] `/cve shop initialstock ...` mengubah bootstrap value konfigurasi tanpa mereset stock listing existing.
-- [ ] `/cve shop maxstock ...` mengubah batas stock; jika batas diperkecil, reconcile clamp runtime stock secara aman.
+- [ ] `/cve shop initialstock ...` tidak mereset stock listing existing.
+- [ ] `/cve shop maxstock ...` dapat clamp runtime stock secara aman ketika max diperkecil.
 
 ## Transactional Config Write
 
-- [ ] Setiap perubahan konfigurasi membuat/menyegarkan `shops.yml.admin.bak` sebelum replace.
-- [ ] Candidate config divalidasi dengan ShopRegistry sebelum mengganti `shops.yml` aktif.
-- [ ] File temp admin tidak tertinggal setelah operasi sukses.
-- [ ] Jika candidate invalid, `shops.yml` aktif tidak berubah.
-- [ ] Jika runtime reload gagal setelah replace, service mencoba mengembalikan file original dan reload runtime lama.
+- [ ] Setiap perubahan config membuat/menyegarkan `shops.yml.admin.bak` sebelum replace.
+- [ ] Candidate divalidasi ShopRegistry sebelum mengganti file aktif.
+- [ ] File `.admin.candidate` / `.admin.tmp` tidak tertinggal setelah sukses.
+- [ ] Candidate invalid tidak mengubah `shops.yml` aktif.
+- [ ] Jika runtime reload gagal setelah replace, service mencoba restore original dan reload runtime lama.
 
-## Administrative Audit
+## Administrative Audit — Local
 
 File: `plugins/CdrVephilimEconomy/logs/admin-audit.log`.
 
-- [ ] Setiap mutation memiliki record `*_REQUEST` sebelum perubahan dilakukan.
-- [ ] Mutation sukses memiliki record `*_SUCCESS`.
-- [ ] Mutation invalid/gagal memiliki record `*_REJECTED` atau `*_FAILED`.
-- [ ] Actor, action, dan detail perubahan tercatat.
-- [ ] Jika REQUEST audit tidak dapat ditulis, mutation dibatalkan fail-closed.
+- [ ] Setiap mutation memiliki `*_REQUEST` sebelum perubahan.
+- [ ] Mutation sukses memiliki `*_SUCCESS`.
+- [ ] Mutation invalid/gagal memiliki `*_REJECTED` atau `*_FAILED`.
+- [ ] Actor, action, detail tercatat.
+- [ ] REQUEST audit gagal ditulis → mutation dibatalkan fail-closed.
 - [ ] Stock change mencatat before/after.
+- [ ] Migration v1→v2 meninggalkan `SHOPS_SCHEMA_MIGRATION_SUCCESS` bila local admin audit writable.
+
+## Administrative Audit — Discord
+
+Config:
+
+```yaml
+admin-audit:
+  discord:
+    enabled: true
+    webhook-url: "..."
+    include-requests: false
+```
+
+- [ ] Dengan Discord admin audit disabled, tidak ada request network.
+- [ ] Enabled + webhook valid mengirim `*_SUCCESS`, `*_FAILED`, dan `*_REJECTED` secara async.
+- [ ] `include-requests: false` tidak mengirim `*_REQUEST` ke Discord.
+- [ ] `include-requests: true` ikut mengirim REQUEST.
+- [ ] Webhook URL tidak ditulis ke console maupun admin-audit.log.
+- [ ] Discord offline/error HTTP tidak membatalkan mutation yang local audit + persistence-nya sudah sukses.
+- [ ] Mengubah config Discord lalu `/cve reload` langsung dipakai oleh admin audit berikutnya tanpa restart.
 
 ## Granular Permissions
 
-- [ ] `cdrvephilimeconomy.admin` tetap memiliki seluruh akses.
-- [ ] `cdrvephilimeconomy.shop.view` hanya memberi list/info.
-- [ ] `.shop.create` hanya memberi create.
-- [ ] `.shop.delete` hanya memberi delete.
-- [ ] `.shop.bind` hanya memberi bind/unbind.
-- [ ] `.shop.toggle` hanya memberi enable/disable.
-- [ ] `.shop.item` memberi add/remove/mode listing.
+- [ ] `cdrvephilimeconomy.admin` memiliki seluruh akses.
+- [ ] `.shop.view` hanya list/info/schema/validate.
+- [ ] `.shop.create` hanya create.
+- [ ] `.shop.delete` hanya delete.
+- [ ] `.shop.bind` hanya bind/unbind.
+- [ ] `.shop.toggle` hanya enable/disable.
+- [ ] `.shop.edit` hanya display name/size.
+- [ ] `.shop.item` memberi add/remove/mode/slot listing.
 - [ ] `.shop.price` memberi price mutation.
 - [ ] `.shop.stock` memberi runtime/config stock mutation.
 - [ ] `.shop.manager` memberi manager metadata mutation.
-- [ ] Staff dengan permission granular tidak perlu diberi full `cdrvephilimeconomy.admin`.
 
 ## Core Regression
-
-Setelah management testing:
 
 - [ ] BUY 1 tetap sukses.
 - [ ] BUY bulk tetap sukses.
 - [ ] SELL 1 tetap sukses.
 - [ ] SELL bulk tetap sukses.
 - [ ] Restart mempertahankan stock.
-- [ ] `/cve reload`, `/cve doctor`, dan `/cve safety status` tetap bekerja.
+- [ ] `/cve reload`, `/cve doctor`, `/cve safety status` tetap bekerja.
 - [ ] Pending transaction journal dan persistent safety behavior beta.1 tidak berubah.
+- [ ] Upgrade RC1 → RC2 tidak mengubah balance atau runtime stock existing.
 
-## RC1 Exit Criteria
+## RC2 Exit Criteria
 
-RC1 dianggap aman untuk lanjut jika management commands tidak dapat menghasilkan config parsial, invalid candidate tidak mengganti runtime sehat, permission granular bekerja, seluruh mutation administratif memiliki audit trail, dan regression BUY/SELL beta.1 tetap lolos.
+RC2 lulus bila migration v1→v2 tidak kehilangan definisi maupun stock, schema masa depan ditolak fail-closed, Discord admin audit tidak memblokir main transaction path, QoL commands tetap transactional, permission granular benar, dan regression BUY/SELL beta.1 + RC1 management tetap aman.
