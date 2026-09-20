@@ -106,13 +106,15 @@ Target: harga merespons kondisi pasar tanpa menjadi liar.
 - [x] Manager guardrail untuk target/sensitivity/floor/ceiling.
 - [x] Candidate validation + pricing backup/temp + runtime rollback.
 - [x] Mandatory local admin audit untuk pricing mutation.
-- [ ] Dedicated pricing-parameter approval queue — optional hardening, hanya jika runtime QA membutuhkan.
-- [ ] Final regression + security hardening beta.4.
-- [ ] Finalisasi `0.1.0-beta.4`.
+- [x] Final regression + security hardening beta.4.
+- [x] Finalisasi `0.1.0-beta.4`.
+- [ ] Dedicated pricing-parameter approval queue — deferred, bukan blocker beta.4.
 
-**Status implementasi:** `0.1.0-beta.4-RC3` pada branch `dev/beta.4` — market statistics + governed pricing management.
+**Status:** `0.1.0-beta.4` **FINAL / frozen Controlled Dynamic Pricing baseline**.
 
-Dokumentasi: [`docs/BETA4_RC1.md`](docs/BETA4_RC1.md), [`docs/BETA4_RC2.md`](docs/BETA4_RC2.md), [`docs/BETA4_RC3.md`](docs/BETA4_RC3.md), dan test plan RC1-RC3 pada folder `docs/`.
+Dokumentasi final: [`docs/BETA4_FINAL.md`](docs/BETA4_FINAL.md).
+
+Dokumentasi development: [`docs/BETA4_RC1.md`](docs/BETA4_RC1.md), [`docs/BETA4_RC2.md`](docs/BETA4_RC2.md), [`docs/BETA4_RC3.md`](docs/BETA4_RC3.md), dan test plan RC1-RC3 pada folder `docs/`.
 
 ## beta.5 — RP Market Events
 
@@ -124,6 +126,8 @@ Target: kondisi ekonomi menjadi pemantik roleplay.
 - [ ] Event supply tertentu.
 - [ ] Hook pengumuman alun-alun / broadcast RP.
 - [ ] Riwayat event ekonomi.
+
+**Status:** fase berikutnya setelah beta.4 dipromosikan ke `main` dan branch `dev/beta.5` dibuat dari baseline tersebut.
 
 ## v1.0.0 — Production
 
