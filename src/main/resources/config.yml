@@ -46,4 +46,5 @@ messages:
   busy: "<yellow>Transaksi sedang diproses. Coba lagi sebentar.</yellow>"
   not-allowed: "<red>Transaksi tersebut tidak diizinkan oleh pedagang.</red>"
   too-far: "<red>Kamu terlalu jauh dari pedagang. Dekati NPC untuk melanjutkan transaksi.</red>"
+  safety-stop: "<dark_red>Sistem ekonomi sedang dikunci otomatis karena mendeteksi kegagalan transaksi kritis. Hubungi staff.</dark_red>"
   internal-error: "<red>Transaksi gagal dan dibatalkan. Tidak ada item atau uang yang seharusnya hilang.</red>"
