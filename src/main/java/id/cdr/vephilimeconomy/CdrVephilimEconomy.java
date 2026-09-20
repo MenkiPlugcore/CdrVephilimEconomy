@@ -11,6 +11,7 @@ import id.cdr.vephilimeconomy.npc.CitizensNpcListener;
 import id.cdr.vephilimeconomy.shop.ShopRegistry;
 import id.cdr.vephilimeconomy.storage.StockRepository;
 import id.cdr.vephilimeconomy.transaction.PlayerTransactionStateListener;
+import id.cdr.vephilimeconomy.transaction.RuntimeSafetyState;
 import id.cdr.vephilimeconomy.transaction.TransactionService;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.command.PluginCommand;
@@ -26,6 +27,8 @@ import java.io.File;
 import java.io.IOException;
 
 public final class CdrVephilimEconomy extends JavaPlugin {
+    private final RuntimeSafetyState safetyState = new RuntimeSafetyState();
+
     private EconomyBridge economy;
     private ShopRegistry shopRegistry;
     private StockRepository stockRepository;
@@ -218,20 +221,28 @@ public final class CdrVephilimEconomy extends JavaPlugin {
         String warningSuffix = candidate.configurationWarningCount() > 0
                 ? " Ada " + candidate.configurationWarningCount() + " warning konfigurasi; cek console."
                 : "";
-        return new ReloadResult(true, "Reload aman selesai. Restart server tidak diperlukan." + warningSuffix);
+        String safetySuffix = safetyState.isStopped()
+                ? " ECONOMY SAFETY STOP masih aktif; reload tidak mereset safety latch."
+                : "";
+        return new ReloadResult(true, "Reload aman selesai. Restart server tidak diperlukan." + warningSuffix + safetySuffix);
     }
 
     public String statusSummary() {
         if (shopRegistry == null || stockRepository == null) {
             return "runtime belum siap";
         }
-        return "version=" + getDescription().getVersion()
+        String summary = "version=" + getDescription().getVersion()
                 + ", shops=" + shopRegistry.shopCount()
                 + ", enabled=" + shopRegistry.enabledShopCount()
                 + ", npcBindings=" + shopRegistry.activeBindingCount()
                 + ", listings=" + shopRegistry.listingCount()
                 + ", stockEntries=" + stockRepository.entryCount()
-                + ", configWarnings=" + shopRegistry.configurationWarningCount();
+                + ", configWarnings=" + shopRegistry.configurationWarningCount()
+                + ", safety=" + safetyState.shortStatus();
+        if (safetyState.isStopped()) {
+            summary += ", reason=" + compactReason(safetyState.reason());
+        }
+        return summary;
     }
 
     private void installRuntime(ShopRegistry registry, RuntimeSettings settings) throws IOException {
@@ -279,6 +290,7 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                 stockRepository,
                 audit,
                 getLogger(),
+                safetyState,
                 settings.cooldownMillis(),
                 settings.maxAmount(),
                 settings.auditRejected(),
@@ -334,13 +346,17 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                 + ", listings=" + shopRegistry.listingCount()
                 + ", stockEntries=" + stockRepository.entryCount()
                 + ", rejectedDefinitions=" + shopRegistry.rejectedDefinitionCount()
-                + ", configWarnings=" + shopRegistry.configurationWarningCount() + ".");
+                + ", configWarnings=" + shopRegistry.configurationWarningCount()
+                + ", safety=" + safetyState.shortStatus() + ".");
         getLogger().info("Transaction guard: cooldown=" + settings.cooldownMillis() + "ms, bulk=" + settings.bulkAmount()
                 + ", max=" + settings.maxAmount() + ", npcDistance=" + settings.maxNpcDistance() + ".");
         getLogger().info("Audit policy: rejected=" + settings.auditRejected()
                 + ", busyRejected=" + settings.auditBusyRejected()
                 + ", discordIncludeRejected=" + settings.discordIncludeRejected() + ".");
 
+        if (safetyState.isStopped()) {
+            getLogger().severe("Economy safety stop aktif: " + safetyState.reason());
+        }
         if (shopRegistry.activeBindingCount() == 0) {
             getLogger().warning("Tidak ada active NPC binding. Isi npc-id dan enabled di shops.yml lalu gunakan /cve reload.");
         }
@@ -390,6 +406,14 @@ public final class CdrVephilimEconomy extends JavaPlugin {
         if (!file.exists()) {
             saveResource(name, false);
         }
+    }
+
+    private static String compactReason(String reason) {
+        if (reason == null) {
+            return "unknown";
+        }
+        String compact = reason.replace('\n', ' ').replace('\r', ' ');
+        return compact.length() <= 160 ? compact : compact.substring(0, 157) + "...";
     }
 
     private static int clamp(int value, int min, int max) {
