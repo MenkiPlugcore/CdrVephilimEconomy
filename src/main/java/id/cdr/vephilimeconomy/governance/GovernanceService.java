@@ -40,6 +40,7 @@ public final class GovernanceService {
     private final File backupFile;
     private final File tempFile;
     private final Map<UUID, Assignment> assignments = new LinkedHashMap<>();
+    private final GovernanceQuotaLedger quotaLedger;
 
     private boolean healthy;
     private String healthDetail = "not loaded";
@@ -50,6 +51,9 @@ public final class GovernanceService {
         this.file = new File(plugin.getDataFolder(), "governance.yml");
         this.backupFile = new File(plugin.getDataFolder(), "governance.yml.bak");
         this.tempFile = new File(plugin.getDataFolder(), "governance.yml.tmp");
+        this.quotaLedger = new GovernanceQuotaLedger(plugin, audit);
+        plugin.getServer().getPluginManager().registerEvents(
+                new GovernanceQuotaCommandListener(plugin, this, quotaLedger), plugin);
     }
 
     public synchronized Result load() {
@@ -61,7 +65,14 @@ public final class GovernanceService {
             assignments.clear();
             assignments.putAll(loaded);
             healthy = true;
-            healthDetail = "schema=v" + SCHEMA + ", members=" + assignments.size();
+
+            GovernanceQuotaLedger.Result quotaLoad = quotaLedger.load();
+            healthDetail = "schema=v" + SCHEMA + ", members=" + assignments.size()
+                    + ", quota=" + (quotaLoad.success() ? "OK" : "FAIL-CLOSED");
+            if (!quotaLoad.success()) {
+                plugin.getLogger().severe("Governance assignment tetap loaded, tetapi direct role mutation quota fail-closed: "
+                        + quotaLoad.message());
+            }
             return Result.ok("Governance loaded: " + healthDetail + ".");
         } catch (IOException exception) {
             healthy = false;
@@ -285,7 +296,8 @@ public final class GovernanceService {
     }
 
     public synchronized String statusSummary() {
-        return "healthy=" + healthy + ", " + healthDetail + ", members=" + assignments.size();
+        return "healthy=" + healthy + ", " + healthDetail + ", members=" + assignments.size()
+                + ", quota={" + quotaLedger.statusSummary() + "}";
     }
 
     public synchronized String describe(String playerName) {
@@ -296,7 +308,8 @@ public final class GovernanceService {
         Assignment assignment = optional.get();
         return assignment.lastKnownName() + " role=" + assignment.role()
                 + ", scopes=" + String.join(",", assignment.scopes())
-                + ", capabilities=" + assignment.role().capabilities();
+                + ", capabilities=" + assignment.role().capabilities()
+                + ", " + quotaLedger.describe(assignment.uuid(), assignment.role());
     }
 
     private Assignment assignment(CommandSender sender) {
