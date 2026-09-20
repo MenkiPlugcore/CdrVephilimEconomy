@@ -51,7 +51,7 @@ admin-audit:
 governance:
   limits:
     economy-staff:
-      # Perubahan di atas limit tidak lagi hard-denied pada RC2; plugin membuat approval request.
+      # Perubahan di atas limit membuat approval request.
       max-price-change-percent: 20.0
       # ADD/REMOVE di atas limit masuk approval queue. SET selalu approval untuk Staff/Manager.
       max-runtime-stock-delta: 128
@@ -70,6 +70,32 @@ governance:
 
     # Mencegah satu staff memenuhi queue dengan request aktif.
     max-pending-per-requester: 5
+
+  quota:
+    # RC3 rolling quota untuk mutation role-only yang masih berada di bawah limit per operasi.
+    # Permission beta.2 eksplisit, full admin, dan Royal Treasurer tidak dibatasi quota ini.
+    enabled: true
+
+    # Event lama dibuang dari memory setelah retention ini. File dipadatkan pada write berikutnya.
+    # Safety clamp internal 1-720 jam.
+    retention-hours: 48
+
+    economy-staff:
+      # Total direct mutation dihitung dalam rolling window, bukan reset per jam kalender.
+      window-minutes: 60
+      # Jumlah absolut persen perubahan harga yang boleh dieksekusi langsung dalam window.
+      # Contoh 20% + 20% = 40 quota points meskipun harga compounding.
+      max-price-percent-sum: 40.0
+      # Total ADD/REMOVE runtime stock direct dalam window.
+      max-stock-delta-sum: 256
+      # Cooldown global antar direct price/stock mutation role-only.
+      cooldown-seconds: 15
+
+    economy-manager:
+      window-minutes: 60
+      max-price-percent-sum: 100.0
+      max-stock-delta-sum: 4096
+      cooldown-seconds: 5
 
 messages:
   prefix: "<dark_gray>[<gold>Vephilim Economy</gold>]</dark_gray> "
