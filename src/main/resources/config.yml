@@ -18,9 +18,21 @@ npc:
 
 audit:
   local-enabled: true
+
+  # Catat transaksi yang ditolak seperti saldo kurang, stock kurang,
+  # inventory penuh, mode BUY/SELL tidak diizinkan, dan max-stock tercapai.
+  log-rejected-transactions: true
+
+  # BUSY/cooldown bisa sangat spam, default tidak dicatat.
+  log-busy-rejections: false
+
   discord:
     enabled: false
     webhook-url: ""
+
+    # Default false supaya penolakan biasa tidak membanjiri Discord.
+    # FAILED/internal error tetap dikirim saat Discord audit aktif.
+    include-rejected: false
 
 messages:
   prefix: "<dark_gray>[<gold>Vephilim Economy</gold>]</dark_gray> "
