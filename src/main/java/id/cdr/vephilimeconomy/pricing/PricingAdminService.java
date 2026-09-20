@@ -4,6 +4,7 @@ import id.cdr.vephilimeconomy.CdrVephilimEconomy;
 import id.cdr.vephilimeconomy.admin.AdminAuditService;
 import id.cdr.vephilimeconomy.shop.Shop;
 import id.cdr.vephilimeconomy.shop.ShopListing;
+import id.cdr.vephilimeconomy.transaction.TransactionType;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -119,11 +120,9 @@ public final class PricingAdminService {
             Shop shop = plugin.findRuntimeShop(shopId).orElse(null);
             ShopListing listing = shop == null ? null : shop.listings().get(listingId);
             if (pricing != null && listing != null) {
-                int stock = plugin.runtimeStock(shopId, listingId);
-                DynamicPricingService.PriceQuote buy = pricing.quote(shop, listing, stock,
-                        id.cdr.vephilimeconomy.transaction.TransactionType.BUY);
-                DynamicPricingService.PriceQuote sell = pricing.quote(shop, listing, stock,
-                        id.cdr.vephilimeconomy.transaction.TransactionType.SELL);
+                int stock = readPersistedStock(shopId, listingId);
+                DynamicPricingService.PriceQuote buy = pricing.quote(shop, listing, stock, TransactionType.BUY);
+                DynamicPricingService.PriceQuote sell = pricing.quote(shop, listing, stock, TransactionType.SELL);
                 lines.add("§7stock=§f" + stock + "/" + listing.maxStock()
                         + " §7multiplier=§f" + buy.multiplier());
                 lines.add("§7BUY base/effective=§f" + listing.buyPrice() + "/" + buy.effectivePrice()
@@ -146,6 +145,12 @@ public final class PricingAdminService {
         } catch (IOException exception) {
             return "INVALID(" + compact(exception.getMessage()) + ")";
         }
+    }
+
+    private int readPersistedStock(String shopId, String listingId) throws IOException {
+        File stockFile = new File(plugin.getDataFolder(), "stock.yml");
+        YamlConfiguration stock = loadStrict(stockFile);
+        return Math.max(0, stock.getInt("shops." + shopId + "." + listingId, 0));
     }
 
     private synchronized Result mutate(String actor, String action, String detail, Mutation mutation) {
