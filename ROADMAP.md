@@ -82,26 +82,30 @@ Dokumentasi final: [`docs/BETA3_FINAL.md`](docs/BETA3_FINAL.md).
 
 Target: harga merespons kondisi pasar tanpa menjadi liar.
 
-- [x] Harga stock-driven supply/demand sederhana dari current stock ratio.
+- [x] Harga stock-driven supply/demand sederhana dari stock ratio.
 - [x] Minimum price guard melalui `min-multiplier`.
 - [x] Maximum price guard melalui `max-multiplier`.
 - [x] Sensitivity + target-stock-ratio per listing.
 - [x] `pricing.yml` schema v1 dengan master switch default OFF.
 - [x] Effective BUY/SELL quote tampil di NPC GUI.
 - [x] Transaction journal/audit memakai harga efektif aktual.
-- [x] Stale-GUI price guard: harga berubah -> transaksi ditolak sebelum money/item mutation dan GUI direfresh.
-- [x] Invalid `pricing.yml` membatalkan startup/reload secara aman; runtime lama dipertahankan saat reload gagal.
-- [ ] Cooldown/sampling perubahan harga supaya quote tidak berubah setiap stock tick/transaksi.
-- [ ] Durable market state untuk cooldown dan restart continuity.
-- [ ] Proteksi manipulasi BUY/SELL bolak-balik / self-induced churn.
+- [x] Stale-GUI price guard sebelum money/item mutation.
+- [x] Invalid `pricing.yml` membatalkan startup/reload secara aman.
+- [x] Quote cooldown/sampling supaya harga tidak berubah setiap transaksi.
+- [x] Minimum stock delta sebelum market resample.
+- [x] Durable `market-state.yml` + backup/temp persistence.
+- [x] Restart continuity untuk sampled multiplier.
+- [x] Policy fingerprint invalidation saat parameter market berubah.
+- [x] Fail-closed dynamic layer ke static base price jika market state rusak.
+- [x] Rapid opposite-direction BUY/SELL reversal guard per player/listing.
 - [ ] Statistik harga, stock pressure, dan volume transaksi.
 - [ ] Governance integration untuk perubahan parameter dynamic pricing.
 - [ ] Final regression + security hardening beta.4.
 - [ ] Finalisasi `0.1.0-beta.4`.
 
-**Status implementasi:** `0.1.0-beta.4-RC1` pada branch `dev/beta.4` — bounded stock-ratio pricing foundation + stale quote safety.
+**Status implementasi:** `0.1.0-beta.4-RC2` pada branch `dev/beta.4` — durable sampled market state + anti-churn hardening.
 
-Dokumentasi RC1: [`docs/BETA4_RC1.md`](docs/BETA4_RC1.md) dan [`docs/BETA4_TEST_PLAN.md`](docs/BETA4_TEST_PLAN.md).
+Dokumentasi: [`docs/BETA4_RC1.md`](docs/BETA4_RC1.md), [`docs/BETA4_RC2.md`](docs/BETA4_RC2.md), [`docs/BETA4_TEST_PLAN.md`](docs/BETA4_TEST_PLAN.md), dan [`docs/BETA4_RC2_TEST_PLAN.md`](docs/BETA4_RC2_TEST_PLAN.md).
 
 ## beta.5 — RP Market Events
 
