@@ -2,7 +2,7 @@
 
 Dokumen ini dipakai sebelum `beta.1` dianggap siap dipasang sebagai build uji Vephilim Roleplay.
 
-Target build saat ini: `0.1.0-beta.1-RC5`.
+Target build saat ini: `0.1.0-beta.1-RC6`.
 
 ## Prasyarat
 
@@ -54,12 +54,39 @@ Harga saja tidak mengaktifkan arah transaksi.
 
 ## Startup Diagnostics
 
-- [ ] Console menampilkan version RC5 saat plugin enable.
+- [ ] Console menampilkan version RC6 saat plugin enable.
 - [ ] Console menampilkan jumlah shop, shop enabled, NPC binding, listing, stock entry, rejected definition, config warning, dan safety state.
 - [ ] Jika tidak ada active NPC binding, plugin tetap enable tetapi memberi warning yang jelas.
 - [ ] Vault economy provider yang dipakai tercetak di console.
 - [ ] Nilai transaction guard efektif (cooldown, bulk, max amount, NPC distance) tercetak di console.
 - [ ] `/cve status` menampilkan `safety=OK` pada kondisi normal.
+
+## `/cve doctor` Health Diagnostics
+
+Doctor tidak boleh mengubah balance, inventory, stock, shop binding, atau safety state.
+
+- [ ] `/cve doctor` hanya dapat dipakai oleh `cdrvephilimeconomy.admin`.
+- [ ] Kondisi server sehat menghasilkan summary tanpa `FAIL`.
+- [ ] Doctor memeriksa runtime service utama.
+- [ ] Doctor mendeteksi Citizens dan Vault enabled.
+- [ ] Doctor memastikan economy provider/bridge tersedia.
+- [ ] Doctor strict-parse `config.yml` dan menandai YAML invalid sebagai `FAIL` tanpa reload runtime.
+- [ ] Doctor strict-parse/validate `shops.yml`; rejected definition menjadi `FAIL` dan configuration warning menjadi `WARN`.
+- [ ] Perubahan `shops.yml` di disk yang belum direload menghasilkan `runtime-vs-disk` warning bila jumlah shop/listing/binding berbeda.
+- [ ] NPC ID yang tidak ada di Citizens menghasilkan `FAIL` pada `npc-bindings`.
+- [ ] NPC valid tetapi tidak spawned menghasilkan `WARN`, bukan mutasi/spawn paksa.
+- [ ] `stock.yml` utama dengan schema/entry valid dan sesuai runtime menghasilkan `PASS`.
+- [ ] Perbedaan nilai `stock.yml` utama vs stock runtime menghasilkan `FAIL` tanpa doctor menulis ulang stock.
+- [ ] `stock.yml.bak` hilang/corrupt menghasilkan `WARN` karena redundancy recovery menurun.
+- [ ] `stock.yml.initialized` hilang menghasilkan `FAIL`.
+- [ ] Stale `stock.yml.tmp` menghasilkan `WARN`.
+- [ ] Doctor melakukan temporary filesystem write/delete test dan tidak meninggalkan `.cve-doctor-*.tmp` saat sukses.
+- [ ] Local audit enabled + writer aktif menghasilkan `PASS`.
+- [ ] Local audit disabled menghasilkan `WARN`.
+- [ ] Discord audit disabled dianggap normal/`PASS`.
+- [ ] Discord audit enabled dengan URL invalid menghasilkan `FAIL`, tetapi doctor tidak mengirim HTTP/webhook test.
+- [ ] Safety normal menghasilkan `PASS` dan tidak membuat `safety.lock`.
+- [ ] Safety stop aktif menghasilkan `FAIL` lengkap dengan tx/reason ringkas dan tidak melakukan unlock.
 
 ## Functional Tests
 
@@ -198,4 +225,4 @@ Bagian ini sengaja untuk failure injection/staging; jangan dilakukan di server p
 
 ## Exit Criteria beta.1
 
-`beta.1` baru dianggap lulus jika jalur BUY/SELL utama, safe runtime reload, NPC-only proximity guard, persistence/recovery stock, config validation, audit trail, clean shutdown, persistent safety-stop recovery, dan skenario anti-dupe di atas lolos di server uji. Fitur governance, admin GUI, dynamic pricing, dan market event tetap di luar scope beta.1.
+`beta.1` baru dianggap lulus jika jalur BUY/SELL utama, safe runtime reload, `/cve doctor`, NPC-only proximity guard, persistence/recovery stock, config validation, audit trail, clean shutdown, persistent safety-stop recovery, dan skenario anti-dupe di atas lolos di server uji. Fitur governance, admin GUI, dynamic pricing, dan market event tetap di luar scope beta.1.
