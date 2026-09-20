@@ -76,11 +76,17 @@ Target: admin dapat mengelola shop tanpa edit source code atau bergantung pada e
 - [x] Discord administrative audit sink async.
 - [x] Management diagnostics `/cve shop schema` + `/cve shop validate`.
 - [x] QoL display name / GUI size / listing slot.
+- [x] Durable journal untuk crash-window admin config mutation.
+- [x] Deterministic admin mutation recovery berbasis original/candidate SHA-256.
+- [x] Schema migration pending marker + verified backup/candidate hash.
+- [x] Interrupted schema migration recovery / fail-closed ambiguity guard.
 - [ ] Admin GUI opsional untuk operasi rutin tanpa command panjang.
-- [ ] Final beta.2 regression + migration recovery drill.
+- [ ] Final beta.2 runtime regression + recovery drill.
 - [ ] Finalisasi `0.1.0-beta.2`.
 
-**Status implementasi:** `0.1.0-beta.2-RC2` pada branch `dev/beta.2`. RC1 management smoke test dinyatakan aman; RC2 fokus migration safety, administrative Discord audit, dan operasional QoL tanpa mengubah core transaction engine beta.1.
+**Status implementasi:** `0.1.0-beta.2-RC3` pada branch `dev/beta.2`. RC1 dan RC2 smoke test dinyatakan aman. RC3 adalah kandidat hardening terakhir: fokus pada crash-window perubahan config admin, interrupted schema migration recovery, dan final regression tanpa mengubah core transaction engine beta.1.
+
+Jika RC3 lolos runtime regression, tahap berikutnya langsung `0.1.0-beta.2 FINAL`; RC tambahan hanya dibuat bila ada bug nyata.
 
 ## beta.3 — Economy Staff & Governance
 
