@@ -62,6 +62,21 @@ public final class ShopGuiService {
         return value == null ? Double.NaN : value;
     }
 
+    public DynamicPricingService.ChurnDecision checkMarketChurn(Player player, Shop shop,
+                                                                 ShopListing listing, TransactionType type) {
+        if (pricing == null) {
+            return new DynamicPricingService.ChurnDecision(true, 0L, "OK");
+        }
+        return pricing.checkChurn(player.getUniqueId(), shop, listing, type);
+    }
+
+    public void recordSuccessfulMarketTransaction(Player player, Shop shop,
+                                                  ShopListing listing, TransactionType type) {
+        if (pricing != null) {
+            pricing.recordSuccessfulTransaction(player.getUniqueId(), shop, listing, type);
+        }
+    }
+
     private ItemStack render(Player player, Shop shop, ShopListing listing) {
         ItemStack stack = new ItemStack(listing.material());
         ItemMeta meta = stack.getItemMeta();
@@ -91,7 +106,7 @@ public final class ShopGuiService {
             long percent = Math.round((marketQuote.multiplier() - 1.0D) * 100.0D);
             String sign = percent > 0 ? "+" : "";
             lore.add(miniMessage.deserialize("<gray>Pasar dinamis: <yellow>" + sign + percent
-                    + "%</yellow> <dark_gray>(stok " + Math.round(marketQuote.stockRatio() * 100.0D) + "%)</dark_gray></gray>"));
+                    + "%</yellow> <dark_gray>(sampel stok " + Math.round(marketQuote.stockRatio() * 100.0D) + "%)</dark_gray></gray>"));
         }
         lore.add(Component.empty());
 
