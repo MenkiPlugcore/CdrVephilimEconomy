@@ -36,17 +36,7 @@ Target: membuktikan loop transaksi dasar dengan aman.
 - [x] Clean shutdown/flush.
 - [x] Final anti-dupe / regression hardening.
 
-**Status implementasi:** `0.1.0-beta.1` **FINAL / frozen baseline**. Rangkaian RC1-RC7 sudah ditutup dan build ini menjadi baseline stabil untuk core NPC economy sebelum `beta.2` dimulai.
-
-Exit criteria beta.1:
-- transaksi tidak menghasilkan item/uang ganda pada jalur yang diketahui;
-- stok konsisten setelah BUY/SELL normal;
-- restart/shutdown bersih mempertahankan state ekonomi;
-- crash window meninggalkan recovery evidence dan memicu fail-closed;
-- kehilangan/corrupt snapshot stock tidak menyebabkan silent stock reset;
-- persistent safety stop tidak dapat dilewati dengan reload/restart;
-- transaksi penting dan failure kritis memiliki audit trail;
-- admin memiliki diagnostics untuk memeriksa kesehatan runtime/storage.
+**Status implementasi:** `0.1.0-beta.1` **FINAL / frozen baseline**.
 
 Dokumentasi final: [`docs/BETA1_FINAL.md`](docs/BETA1_FINAL.md).
 
@@ -84,21 +74,38 @@ Target: admin dapat mengelola shop tanpa edit source code atau bergantung pada e
 - [x] Finalisasi `0.1.0-beta.2`.
 - [ ] Admin GUI opsional untuk operasi rutin tanpa command panjang — deferred, bukan blocking beta.2.
 
-**Status implementasi:** `0.1.0-beta.2` **FINAL / frozen Shop Management baseline**. RC1-RC3 sudah ditutup dan runtime testing normal dinyatakan aman sebelum finalisasi. Fitur baru setelah titik ini masuk beta.3; patch beta.2 hanya untuk bug/regression pada baseline ini.
+**Status implementasi:** `0.1.0-beta.2` **FINAL / frozen Shop Management baseline**.
 
 Dokumentasi final: [`docs/BETA2_FINAL.md`](docs/BETA2_FINAL.md).
 
 ## beta.3 — Economy Staff & Governance
 
-Target: ekonomi dapat dikelola sebagai bagian dari RP kerajaan.
+Target: ekonomi dapat dikelola sebagai bagian dari RP kerajaan tanpa memberi full admin access ke seluruh staff.
 
-- [ ] Role Economy Staff.
-- [ ] Scope akses per shop.
-- [ ] Economy Manager / Royal Treasurer.
-- [ ] Approval untuk perubahan sensitif.
-- [ ] Audit siapa mengubah apa dan kapan.
-- [ ] Discord log untuk perubahan administratif.
-- [ ] Batas perubahan harga/stok untuk mencegah abuse.
+- [x] Role `ECONOMY_STAFF`.
+- [x] Scope akses per shop.
+- [x] Role `ECONOMY_MANAGER`.
+- [x] Role `ROYAL_TREASURER`.
+- [x] Persistent `governance.yml` berbasis UUID + backup/atomic write.
+- [x] Command grant/revoke/list/who/reload governance.
+- [x] Integrasi role capability dengan command shop beta.2 tanpa menghapus permission lama.
+- [x] Audit grant/revoke melalui administrative audit beta.2.
+- [x] Discord governance log melalui administrative Discord audit sink yang sama.
+- [x] Guardrail perubahan harga per operasi untuk Staff/Manager.
+- [x] Guardrail runtime stock add/remove per operasi untuk Staff/Manager.
+- [x] Runtime stock SET dibatasi ke Royal Treasurer/admin/explicit beta.2 permission.
+- [ ] Approval queue untuk perubahan sensitif.
+- [ ] Anti-self-approval.
+- [ ] Threshold perubahan yang wajib approval.
+- [ ] Expiry/cancel approval request.
+- [ ] Daily/rolling governance quota dan cooldown anti-spam perubahan berulang.
+- [ ] Durable approval recovery evidence.
+- [ ] Final beta.3 regression dan security audit.
+- [ ] Finalisasi `0.1.0-beta.3`.
+
+**Status implementasi:** `0.1.0-beta.3-RC1` pada branch `dev/beta.3`. RC1 membuka role/scope foundation dan guardrail awal; approval workflow sengaja ditunda ke RC berikutnya agar enforcement role/scope dapat diuji secara terpisah.
+
+Dokumentasi RC1: [`docs/BETA3_RC1.md`](docs/BETA3_RC1.md) dan [`docs/BETA3_TEST_PLAN.md`](docs/BETA3_TEST_PLAN.md).
 
 ## beta.4 — Controlled Dynamic Pricing
 
@@ -138,8 +145,6 @@ Target: stabil untuk digunakan sebagai economy utama Vephilim Roleplay.
 - [ ] Production release.
 
 ## Non-goals Awal
-
-Hal berikut sengaja tidak menjadi prioritas fase pertama:
 
 - command `/shop` untuk player;
 - auction house global;
