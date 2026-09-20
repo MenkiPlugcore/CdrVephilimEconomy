@@ -25,5 +25,8 @@ shops:
 # beta.1:
 # - npc-id harus diisi dengan ID Citizens NPC yang sudah dibuat.
 # - enabled harus true agar NPC membuka GUI.
+# - mode menentukan arah transaksi: BUY, SELL, atau BUY_SELL.
+# - mengisi buy-price saja TIDAK mengaktifkan BUY jika mode masih SELL.
+# - mengisi sell-price saja TIDAK mengaktifkan SELL jika mode masih BUY.
 # - stock mutable disimpan terpisah di stock.yml pada folder plugin.
 # - identitas item beta.1 masih berbasis item vanilla/material polos.
