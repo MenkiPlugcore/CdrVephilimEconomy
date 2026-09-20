@@ -3,6 +3,7 @@ package id.cdr.vephilimeconomy.storage;
 import id.cdr.vephilimeconomy.shop.Shop;
 import id.cdr.vephilimeconomy.shop.ShopListing;
 import id.cdr.vephilimeconomy.shop.ShopRegistry;
+import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.io.File;
@@ -10,36 +11,64 @@ import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.logging.Logger;
 
 public final class StockRepository {
+    private static final int SCHEMA_VERSION = 1;
+
     private final File file;
+    private final File backupFile;
+    private final File tempFile;
+    private final Logger logger;
     private final Map<String, Integer> stocks = new HashMap<>();
 
-    public StockRepository(File file) {
+    public StockRepository(File file, Logger logger) {
         this.file = file;
+        this.backupFile = new File(file.getParentFile(), file.getName() + ".bak");
+        this.tempFile = new File(file.getParentFile(), file.getName() + ".tmp");
+        this.logger = logger;
     }
 
     public synchronized void load(ShopRegistry registry) throws IOException {
         stocks.clear();
-        YamlConfiguration yaml = YamlConfiguration.loadConfiguration(file);
-        boolean changed = false;
+
+        LoadResult loaded = loadBestSnapshot(registry);
+        YamlConfiguration yaml = loaded.yaml();
+        boolean changed = loaded.recovered() || yaml.getInt("meta.schema", -1) != SCHEMA_VERSION;
 
         for (Shop shop : registry.all()) {
             for (ShopListing listing : shop.listings().values()) {
                 String key = key(shop.id(), listing.id());
                 String yamlPath = path(shop.id(), listing.id());
+                Object raw = yaml.get(yamlPath);
                 int value;
 
-                if (yaml.contains(yamlPath)) {
-                    value = yaml.getInt(yamlPath, listing.initialStock());
-                    int clamped = Math.max(0, Math.min(listing.maxStock(), value));
-                    if (clamped != value) {
+                if (raw == null) {
+                    value = listing.initialStock();
+                    changed = true;
+                } else if (raw instanceof Number number && isWholeNumber(number)) {
+                    long longValue = number.longValue();
+                    if (longValue < Integer.MIN_VALUE || longValue > Integer.MAX_VALUE) {
+                        logger.warning("Stock " + shop.id() + "/" + listing.id()
+                                + " di luar range integer. Menggunakan initial-stock.");
+                        value = listing.initialStock();
                         changed = true;
+                    } else {
+                        int stored = (int) longValue;
+                        int clamped = Math.max(0, Math.min(listing.maxStock(), stored));
+                        if (clamped != stored) {
+                            logger.warning("Stock " + shop.id() + "/" + listing.id()
+                                    + " berada di luar bounds dan di-clamp: " + stored + " -> " + clamped);
+                            changed = true;
+                        }
+                        value = clamped;
                     }
-                    value = clamped;
                 } else {
+                    logger.warning("Stock " + shop.id() + "/" + listing.id()
+                            + " bukan bilangan bulat valid. Menggunakan initial-stock.");
                     value = listing.initialStock();
                     changed = true;
                 }
@@ -50,7 +79,11 @@ public final class StockRepository {
 
         if (changed || !file.exists()) {
             persist();
+        } else if (!backupFile.exists()) {
+            refreshBackupBestEffort();
         }
+
+        cleanupStaleTemp();
     }
 
     public synchronized int getStock(String shopId, String listingId) {
@@ -72,12 +105,60 @@ public final class StockRepository {
             } else {
                 stocks.put(key, previous);
             }
+            cleanupStaleTemp();
             throw exception;
         }
     }
 
     public synchronized void flush() throws IOException {
         persist();
+    }
+
+    private LoadResult loadBestSnapshot(ShopRegistry registry) throws IOException {
+        if (file.exists()) {
+            try {
+                YamlConfiguration yaml = loadStrict(file);
+                validateStructure(yaml, registry, file);
+                return new LoadResult(yaml, false);
+            } catch (IOException primary) {
+                logger.severe("stock.yml tidak valid: " + primary.getMessage());
+                if (backupFile.exists()) {
+                    try {
+                        YamlConfiguration backup = loadStrict(backupFile);
+                        validateStructure(backup, registry, backupFile);
+                        restoreMainFrom(backupFile);
+                        logger.warning("stock.yml dipulihkan otomatis dari stock.yml.bak.");
+                        return new LoadResult(backup, true);
+                    } catch (IOException backupFailure) {
+                        primary.addSuppressed(backupFailure);
+                    }
+                }
+                throw primary;
+            }
+        }
+
+        if (backupFile.exists()) {
+            YamlConfiguration backup = loadStrict(backupFile);
+            validateStructure(backup, registry, backupFile);
+            restoreMainFrom(backupFile);
+            logger.warning("stock.yml hilang dan dipulihkan dari stock.yml.bak.");
+            return new LoadResult(backup, true);
+        }
+
+        if (tempFile.exists()) {
+            try {
+                YamlConfiguration temp = loadStrict(tempFile);
+                validateStructure(temp, registry, tempFile);
+                restoreMainFrom(tempFile);
+                logger.warning("stock.yml dipulihkan dari temporary snapshot karena snapshot utama/backup tidak tersedia.");
+                return new LoadResult(temp, true);
+            } catch (IOException exception) {
+                logger.warning("Temporary stock snapshot invalid dan diabaikan: " + exception.getMessage());
+                cleanupStaleTemp();
+            }
+        }
+
+        return new LoadResult(new YamlConfiguration(), false);
     }
 
     private void persist() throws IOException {
@@ -87,18 +168,115 @@ public final class StockRepository {
         }
 
         YamlConfiguration yaml = new YamlConfiguration();
+        yaml.set("meta.schema", SCHEMA_VERSION);
+        yaml.set("meta.updated-at", Instant.now().toString());
         for (Map.Entry<String, Integer> entry : stocks.entrySet()) {
             String[] parts = entry.getKey().split("\\|", 2);
             yaml.set(path(parts[0], parts[1]), entry.getValue());
         }
 
-        File temp = new File(file.getParentFile(), file.getName() + ".tmp");
-        yaml.save(temp);
         try {
-            Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException exception) {
-            Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            yaml.save(tempFile);
+            YamlConfiguration verified = loadStrict(tempFile);
+            verifySnapshot(verified);
+            moveReplace(tempFile, file);
+            refreshBackupBestEffort();
+        } catch (IOException exception) {
+            cleanupStaleTemp();
+            throw exception;
         }
+    }
+
+    private void verifySnapshot(YamlConfiguration yaml) throws IOException {
+        if (yaml.getInt("meta.schema", -1) != SCHEMA_VERSION) {
+            throw new IOException("Temporary stock snapshot schema verification failed");
+        }
+
+        for (Map.Entry<String, Integer> entry : stocks.entrySet()) {
+            String[] parts = entry.getKey().split("\\|", 2);
+            Object raw = yaml.get(path(parts[0], parts[1]));
+            if (!(raw instanceof Number number) || !isWholeNumber(number)
+                    || number.longValue() != entry.getValue()) {
+                throw new IOException("Temporary stock snapshot verification failed for " + entry.getKey());
+            }
+        }
+    }
+
+    private void validateStructure(YamlConfiguration yaml, ShopRegistry registry, File source) throws IOException {
+        boolean hasConfiguredListings = registry.all().stream().anyMatch(shop -> !shop.listings().isEmpty());
+        if (!hasConfiguredListings) {
+            return;
+        }
+
+        if (yaml.getConfigurationSection("shops") == null) {
+            throw new IOException(source.getName() + " tidak memiliki section shops");
+        }
+    }
+
+    private YamlConfiguration loadStrict(File source) throws IOException {
+        YamlConfiguration yaml = new YamlConfiguration();
+        try {
+            yaml.load(source);
+        } catch (InvalidConfigurationException exception) {
+            throw new IOException("Invalid YAML in " + source.getName() + ": " + exception.getMessage(), exception);
+        }
+        return yaml;
+    }
+
+    private void restoreMainFrom(File source) throws IOException {
+        File recovery = new File(file.getParentFile(), file.getName() + ".recover");
+        try {
+            Files.copy(source.toPath(), recovery.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            moveReplace(recovery, file);
+        } finally {
+            try {
+                Files.deleteIfExists(recovery.toPath());
+            } catch (IOException ignored) {
+                // Best-effort cleanup only.
+            }
+        }
+    }
+
+    private void refreshBackupBestEffort() {
+        if (!file.exists()) {
+            return;
+        }
+
+        File backupTemp = new File(file.getParentFile(), backupFile.getName() + ".tmp");
+        try {
+            Files.copy(file.toPath(), backupTemp.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            loadStrict(backupTemp);
+            moveReplace(backupTemp, backupFile);
+        } catch (IOException exception) {
+            logger.warning("Gagal memperbarui stock backup: " + exception.getMessage());
+            try {
+                Files.deleteIfExists(backupTemp.toPath());
+            } catch (IOException ignored) {
+                // Best-effort cleanup only.
+            }
+        }
+    }
+
+    private void cleanupStaleTemp() {
+        try {
+            Files.deleteIfExists(tempFile.toPath());
+        } catch (IOException exception) {
+            logger.warning("Gagal membersihkan temporary stock file: " + exception.getMessage());
+        }
+    }
+
+    private static void moveReplace(File source, File target) throws IOException {
+        try {
+            Files.move(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException exception) {
+            Files.move(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private static boolean isWholeNumber(Number number) {
+        double value = number.doubleValue();
+        return Double.isFinite(value) && value == Math.rint(value);
     }
 
     private static String key(String shopId, String listingId) {
@@ -107,5 +285,8 @@ public final class StockRepository {
 
     private static String path(String shopId, String listingId) {
         return "shops." + shopId + "." + listingId;
+    }
+
+    private record LoadResult(YamlConfiguration yaml, boolean recovered) {
     }
 }
