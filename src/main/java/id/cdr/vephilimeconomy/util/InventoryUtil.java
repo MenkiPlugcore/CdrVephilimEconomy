@@ -75,7 +75,13 @@ public final class InventoryUtil {
 
             int take = Math.min(stack.getAmount(), remaining);
             int left = stack.getAmount() - take;
-            inventory.setItem(slot, left <= 0 ? null : stack.asQuantity(left));
+            if (left <= 0) {
+                inventory.setItem(slot, null);
+            } else {
+                ItemStack updated = stack.clone();
+                updated.setAmount(left);
+                inventory.setItem(slot, updated);
+            }
             remaining -= take;
         }
         return remaining == 0;
