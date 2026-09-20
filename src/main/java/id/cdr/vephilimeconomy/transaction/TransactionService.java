@@ -23,6 +23,7 @@ public final class TransactionService {
     private final AuditService audit;
     private final Logger logger;
     private final RuntimeSafetyState safetyState;
+    private final Runnable safetyStopCallback;
     private final long cooldownMillis;
     private final int maxAmount;
     private final boolean auditRejected;
@@ -31,7 +32,7 @@ public final class TransactionService {
     private final Map<UUID, Long> lastTransaction = new ConcurrentHashMap<>();
 
     public TransactionService(EconomyBridge economy, StockRepository stocks, AuditService audit, Logger logger,
-                              RuntimeSafetyState safetyState,
+                              RuntimeSafetyState safetyState, Runnable safetyStopCallback,
                               long cooldownMillis, int maxAmount,
                               boolean auditRejected, boolean auditBusyRejected) {
         this.economy = economy;
@@ -39,6 +40,7 @@ public final class TransactionService {
         this.audit = audit;
         this.logger = logger;
         this.safetyState = safetyState;
+        this.safetyStopCallback = safetyStopCallback == null ? () -> { } : safetyStopCallback;
         this.cooldownMillis = Math.max(0L, cooldownMillis);
         this.maxAmount = Math.max(1, Math.min(2304, maxAmount));
         this.auditRejected = auditRejected;
@@ -277,10 +279,14 @@ public final class TransactionService {
     }
 
     private void tripSafety(UUID tx, String detail) {
-        String reason = "tx=" + tx + "; " + detail;
-        if (safetyState.trip(reason)) {
-            logger.severe("ECONOMY SAFETY STOP ACTIVATED. Semua transaksi baru diblokir sampai server/plugin restart setelah investigasi. "
-                    + reason);
+        if (safetyState.trip(tx, detail)) {
+            logger.severe("ECONOMY SAFETY STOP ACTIVATED. Semua transaksi baru diblokir sampai admin melakukan recovery eksplisit. "
+                    + "tx=" + tx + "; persisted=" + safetyState.persistenceHealthy() + "; " + detail);
+            try {
+                safetyStopCallback.run();
+            } catch (RuntimeException exception) {
+                logger.severe("Safety-stop callback gagal: " + exception.getMessage());
+            }
         }
     }
 
