@@ -27,8 +27,7 @@ import java.io.File;
 import java.io.IOException;
 
 public final class CdrVephilimEconomy extends JavaPlugin {
-    private final RuntimeSafetyState safetyState = new RuntimeSafetyState();
-
+    private RuntimeSafetyState safetyState;
     private EconomyBridge economy;
     private ShopRegistry shopRegistry;
     private StockRepository stockRepository;
@@ -43,6 +42,9 @@ public final class CdrVephilimEconomy extends JavaPlugin {
     public void onEnable() {
         saveDefaultConfig();
         ensureResource("shops.yml");
+
+        safetyState = new RuntimeSafetyState(getDataFolder(), getLogger());
+        safetyState.load();
 
         economy = setupEconomy();
         if (economy == null) {
@@ -60,15 +62,16 @@ public final class CdrVephilimEconomy extends JavaPlugin {
             return;
         }
 
-        stockRepository = new StockRepository(new File(getDataFolder(), "stock.yml"), getLogger());
+        StockRepository candidateStockRepository = new StockRepository(new File(getDataFolder(), "stock.yml"), getLogger());
         try {
-            stockRepository.load(initialRegistry);
+            candidateStockRepository.load(initialRegistry);
         } catch (IOException exception) {
             getLogger().severe("Gagal memuat persistent stock secara aman: " + exception.getMessage());
             getLogger().severe("Plugin dinonaktifkan untuk mencegah reset/dupe stock yang tidak terdeteksi.");
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
+        stockRepository = candidateStockRepository;
 
         RuntimeSettings initialSettings;
         try {
@@ -133,7 +136,7 @@ public final class CdrVephilimEconomy extends JavaPlugin {
     }
 
     public synchronized ReloadResult reloadRuntime() {
-        if (!isEnabled() || stockRepository == null || economy == null) {
+        if (!isEnabled() || stockRepository == null || economy == null || safetyState == null) {
             return new ReloadResult(false, "Plugin belum berada pada runtime state yang dapat direload.");
         }
 
@@ -166,7 +169,7 @@ public final class CdrVephilimEconomy extends JavaPlugin {
 
         TransactionService newTransactions = createTransactionService(newAudit, candidateSettings);
         ShopGuiService newGui = new ShopGuiService(stockRepository, economy, candidateSettings.bulkAmount());
-        CitizensNpcListener newCitizensListener = new CitizensNpcListener(candidate, newGui);
+        CitizensNpcListener newCitizensListener = new CitizensNpcListener(this, candidate, newGui, safetyState);
         ShopGuiListener newGuiListener = new ShopGuiListener(
                 this,
                 candidate,
@@ -222,13 +225,13 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                 ? " Ada " + candidate.configurationWarningCount() + " warning konfigurasi; cek console."
                 : "";
         String safetySuffix = safetyState.isStopped()
-                ? " ECONOMY SAFETY STOP masih aktif; reload tidak mereset safety latch."
+                ? " ECONOMY SAFETY STOP masih aktif; reload tidak mereset safety lock."
                 : "";
         return new ReloadResult(true, "Reload aman selesai. Restart server tidak diperlukan." + warningSuffix + safetySuffix);
     }
 
     public String statusSummary() {
-        if (shopRegistry == null || stockRepository == null) {
+        if (shopRegistry == null || stockRepository == null || safetyState == null) {
             return "runtime belum siap";
         }
         String summary = "version=" + getDescription().getVersion()
@@ -240,16 +243,57 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                 + ", configWarnings=" + shopRegistry.configurationWarningCount()
                 + ", safety=" + safetyState.shortStatus();
         if (safetyState.isStopped()) {
-            summary += ", reason=" + compactReason(safetyState.reason());
+            summary += ", tx=" + (safetyState.transactionId() == null ? "unknown" : safetyState.transactionId())
+                    + ", persisted=" + safetyState.persistenceHealthy()
+                    + ", reason=" + compactReason(safetyState.reason());
         }
         return summary;
+    }
+
+    public String safetyStatusSummary() {
+        if (safetyState == null) {
+            return "safety runtime belum siap";
+        }
+        if (!safetyState.isStopped()) {
+            return "safety=OK, persistentLock=false";
+        }
+        return "safety=" + safetyState.shortStatus()
+                + ", persisted=" + safetyState.persistenceHealthy()
+                + ", tx=" + (safetyState.transactionId() == null ? "unknown" : safetyState.transactionId())
+                + ", stoppedAt=" + safetyState.stoppedAt()
+                + ", reason=" + compactReason(safetyState.reason());
+    }
+
+    public synchronized ReloadResult unlockSafety(String actor) {
+        if (safetyState == null || stockRepository == null) {
+            return new ReloadResult(false, "Safety/storage runtime belum siap.");
+        }
+        if (!safetyState.isStopped()) {
+            return new ReloadResult(false, "Safety stop tidak sedang aktif.");
+        }
+
+        try {
+            stockRepository.flush();
+        } catch (IOException exception) {
+            return new ReloadResult(false, "Recovery ditolak karena stock snapshot tidak dapat di-flush: "
+                    + exception.getMessage());
+        }
+
+        RuntimeSafetyState.UnlockResult unlock = safetyState.unlock(actor);
+        if (!unlock.success()) {
+            return new ReloadResult(false, unlock.message());
+        }
+
+        getLogger().warning("Safety recovery selesai oleh " + actor
+                + ". Runtime transaksi dibuka kembali tanpa menghapus safety-history.log.");
+        return new ReloadResult(true, unlock.message());
     }
 
     private void installRuntime(ShopRegistry registry, RuntimeSettings settings) throws IOException {
         AuditService newAudit = createAuditService(settings);
         TransactionService newTransactions = createTransactionService(newAudit, settings);
         ShopGuiService newGui = new ShopGuiService(stockRepository, economy, settings.bulkAmount());
-        CitizensNpcListener newCitizensListener = new CitizensNpcListener(registry, newGui);
+        CitizensNpcListener newCitizensListener = new CitizensNpcListener(this, registry, newGui, safetyState);
         ShopGuiListener newGuiListener = new ShopGuiListener(
                 this,
                 registry,
@@ -291,6 +335,7 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                 audit,
                 getLogger(),
                 safetyState,
+                this::closeOpenShopInventories,
                 settings.cooldownMillis(),
                 settings.maxAmount(),
                 settings.auditRejected(),
@@ -334,7 +379,7 @@ public final class CdrVephilimEconomy extends JavaPlugin {
     }
 
     private void logDiagnostics(String phase) {
-        if (shopRegistry == null || stockRepository == null) {
+        if (shopRegistry == null || stockRepository == null || safetyState == null) {
             return;
         }
         RuntimeSettings settings = readSettings();
@@ -355,7 +400,10 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                 + ", discordIncludeRejected=" + settings.discordIncludeRejected() + ".");
 
         if (safetyState.isStopped()) {
-            getLogger().severe("Economy safety stop aktif: " + safetyState.reason());
+            getLogger().severe("Economy safety stop aktif dan persisten: tx="
+                    + (safetyState.transactionId() == null ? "unknown" : safetyState.transactionId())
+                    + ", persisted=" + safetyState.persistenceHealthy()
+                    + ", reason=" + safetyState.reason());
         }
         if (shopRegistry.activeBindingCount() == 0) {
             getLogger().warning("Tidak ada active NPC binding. Isi npc-id dan enabled di shops.yml lalu gunakan /cve reload.");
