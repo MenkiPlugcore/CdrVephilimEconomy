@@ -10,6 +10,12 @@ transaction:
   # Safety clamp internal: 1-2304.
   max-amount: 64
 
+npc:
+  # Player wajib tetap berada dekat NPC saat melakukan transaksi.
+  # Ini mencegah GUI shop dipakai dari jarak jauh setelah player berjalan/teleport.
+  # Safety clamp internal: 1.0-32.0 block.
+  max-transaction-distance: 6.0
+
 audit:
   local-enabled: true
   discord:
@@ -27,4 +33,5 @@ messages:
   max-stock: "<red>Pedagang tidak dapat menerima stok sebanyak itu.</red>"
   busy: "<yellow>Transaksi sedang diproses. Coba lagi sebentar.</yellow>"
   not-allowed: "<red>Transaksi tersebut tidak diizinkan oleh pedagang.</red>"
+  too-far: "<red>Kamu terlalu jauh dari pedagang. Dekati NPC untuk melanjutkan transaksi.</red>"
   internal-error: "<red>Transaksi gagal dan dibatalkan. Tidak ada item atau uang yang seharusnya hilang.</red>"
