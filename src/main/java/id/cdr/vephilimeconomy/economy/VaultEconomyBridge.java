@@ -14,6 +14,11 @@ public final class VaultEconomyBridge implements EconomyBridge {
     }
 
     @Override
+    public double balance(OfflinePlayer player) {
+        return economy.getBalance(player);
+    }
+
+    @Override
     public boolean has(OfflinePlayer player, double amount) {
         return economy.has(player, amount);
     }
