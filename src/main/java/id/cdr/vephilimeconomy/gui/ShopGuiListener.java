@@ -101,6 +101,11 @@ public final class ShopGuiListener implements Listener {
         TransactionResult result = transactions.execute(player, shop, listing, type, amount);
         sendResult(player, listing, type, result);
 
+        if (result.failure() == TransactionFailure.SAFETY_STOP) {
+            player.closeInventory();
+            return;
+        }
+
         if (result.success()) {
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 if (player.isOnline() && isNearBoundNpc(player, shop)) {
@@ -177,6 +182,7 @@ public final class ShopGuiListener implements Listener {
             case MAX_STOCK -> "messages.max-stock";
             case BUSY -> "messages.busy";
             case NOT_ALLOWED -> "messages.not-allowed";
+            case SAFETY_STOP -> "messages.safety-stop";
             case INTERNAL_ERROR, NONE -> "messages.internal-error";
         };
     }
