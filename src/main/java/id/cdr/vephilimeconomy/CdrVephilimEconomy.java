@@ -8,6 +8,7 @@ import id.cdr.vephilimeconomy.gui.ShopGuiService;
 import id.cdr.vephilimeconomy.npc.CitizensNpcListener;
 import id.cdr.vephilimeconomy.shop.ShopRegistry;
 import id.cdr.vephilimeconomy.storage.StockRepository;
+import id.cdr.vephilimeconomy.transaction.PlayerTransactionStateListener;
 import id.cdr.vephilimeconomy.transaction.TransactionService;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.plugin.RegisteredServiceProvider;
@@ -35,20 +36,26 @@ public final class CdrVephilimEconomy extends JavaPlugin {
         ShopRegistry shopRegistry = new ShopRegistry();
         shopRegistry.load(new File(getDataFolder(), "shops.yml"), getLogger());
 
-        stockRepository = new StockRepository(new File(getDataFolder(), "stock.yml"));
+        stockRepository = new StockRepository(new File(getDataFolder(), "stock.yml"), getLogger());
         try {
             stockRepository.load(shopRegistry);
         } catch (IOException exception) {
-            getLogger().severe("Gagal memuat persistent stock: " + exception.getMessage());
+            getLogger().severe("Gagal memuat persistent stock secara aman: " + exception.getMessage());
+            getLogger().severe("Plugin dinonaktifkan untuk mencegah reset/dupe stock yang tidak terdeteksi.");
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
+
+        boolean auditRejected = getConfig().getBoolean("audit.log-rejected-transactions", true);
+        boolean auditBusyRejected = getConfig().getBoolean("audit.log-busy-rejections", false);
+        boolean discordIncludeRejected = getConfig().getBoolean("audit.discord.include-rejected", false);
 
         try {
             auditService = new AuditService(
                     this,
                     getConfig().getBoolean("audit.local-enabled", true),
                     getConfig().getBoolean("audit.discord.enabled", false),
+                    discordIncludeRejected,
                     getConfig().getString("audit.discord.webhook-url", "")
             );
         } catch (IOException exception) {
@@ -68,7 +75,9 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                 auditService,
                 getLogger(),
                 cooldownMillis,
-                maxAmount
+                maxAmount,
+                auditRejected,
+                auditBusyRejected
         );
 
         ShopGuiService gui = new ShopGuiService(stockRepository, economy);
@@ -85,10 +94,13 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                 ),
                 this
         );
+        getServer().getPluginManager().registerEvents(new PlayerTransactionStateListener(transactions), this);
 
         getLogger().info("CdrVephilimEconomy beta.1 core enabled: NPC-only shop, static pricing, stock, guarded transactions, audit.");
         getLogger().info("Transaction guard: cooldown=" + cooldownMillis + "ms, bulk=" + bulkAmount
                 + ", max=" + maxAmount + ", npcDistance=" + maxNpcDistance + ".");
+        getLogger().info("Audit policy: rejected=" + auditRejected + ", busyRejected=" + auditBusyRejected
+                + ", discordIncludeRejected=" + discordIncludeRejected + ".");
     }
 
     @Override
