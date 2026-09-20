@@ -28,7 +28,7 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
         }
 
         if (args.length == 0) {
-            sender.sendMessage("§6CdrVephilimEconomy §7- §f/cve reload §7| §f/cve status");
+            sender.sendMessage("§6CdrVephilimEconomy §7- §f/cve reload §7| §f/cve status §7| §f/cve safety status");
             return true;
         }
 
@@ -44,7 +44,33 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        sender.sendMessage("§cSubcommand tidak dikenal. Gunakan /cve reload atau /cve status.");
+        if (sub.equals("safety")) {
+            return handleSafety(sender, args);
+        }
+
+        sender.sendMessage("§cSubcommand tidak dikenal. Gunakan /cve reload, /cve status, atau /cve safety status.");
+        return true;
+    }
+
+    private boolean handleSafety(CommandSender sender, String[] args) {
+        if (args.length == 1 || args[1].equalsIgnoreCase("status")) {
+            sender.sendMessage("§6[CVE Safety] §f" + plugin.safetyStatusSummary());
+            return true;
+        }
+
+        if (args[1].equalsIgnoreCase("unlock")) {
+            if (args.length < 3 || !args[2].equalsIgnoreCase("CONFIRM")) {
+                sender.sendMessage("§c[CVE] Recovery tidak dijalankan. Setelah memeriksa saldo, item, stock, audit log, dan transaction ID, gunakan:");
+                sender.sendMessage("§e/cve safety unlock CONFIRM");
+                return true;
+            }
+
+            CdrVephilimEconomy.ReloadResult result = plugin.unlockSafety(sender.getName());
+            sender.sendMessage((result.success() ? "§a" : "§c") + "[CVE Safety] " + result.message());
+            return true;
+        }
+
+        sender.sendMessage("§cGunakan /cve safety status atau /cve safety unlock CONFIRM.");
         return true;
     }
 
@@ -53,18 +79,37 @@ public final class CveCommand implements CommandExecutor, TabCompleter {
         if (!sender.hasPermission(PERMISSION)) {
             return Collections.emptyList();
         }
-        if (args.length != 1) {
-            return Collections.emptyList();
+
+        if (args.length == 1) {
+            String input = args[0].toLowerCase(Locale.ROOT);
+            List<String> result = new ArrayList<>();
+            addIfStarts(result, "reload", input);
+            addIfStarts(result, "status", input);
+            addIfStarts(result, "safety", input);
+            return result;
         }
 
-        String input = args[0].toLowerCase(Locale.ROOT);
-        List<String> result = new ArrayList<>();
-        if ("reload".startsWith(input)) {
-            result.add("reload");
+        if (args.length == 2 && args[0].equalsIgnoreCase("safety")) {
+            String input = args[1].toLowerCase(Locale.ROOT);
+            List<String> result = new ArrayList<>();
+            addIfStarts(result, "status", input);
+            addIfStarts(result, "unlock", input);
+            return result;
         }
-        if ("status".startsWith(input)) {
-            result.add("status");
+
+        if (args.length == 3 && args[0].equalsIgnoreCase("safety")
+                && args[1].equalsIgnoreCase("unlock")) {
+            return "confirm".startsWith(args[2].toLowerCase(Locale.ROOT))
+                    ? List.of("CONFIRM")
+                    : Collections.emptyList();
         }
-        return result;
+
+        return Collections.emptyList();
+    }
+
+    private static void addIfStarts(List<String> target, String value, String input) {
+        if (value.startsWith(input)) {
+            target.add(value);
+        }
     }
 }
