@@ -6,22 +6,24 @@ Roadmap ini memecah development menjadi fase kecil agar plugin tetap ringan, mud
 
 Target: membuktikan loop transaksi dasar dengan aman.
 
-- [ ] Bootstrap project plugin.
-- [ ] Integrasi Citizens.
-- [ ] Registrasi NPC shop.
-- [ ] NPC membuka GUI shop saat diinteraksi.
-- [ ] BUY item.
-- [ ] SELL item.
-- [ ] Mode BUY-only / SELL-only / BUY+SELL.
-- [ ] Harga statis per item.
-- [ ] Stock engine sederhana.
-- [ ] Validasi saldo player.
-- [ ] Validasi inventory penuh/kosong.
-- [ ] Atomic transaction / rollback bila transaksi gagal.
-- [ ] Anti double-click / anti spam transaksi.
-- [ ] Audit log lokal.
-- [ ] Discord audit log dasar.
-- [ ] Tidak ada command shop untuk player.
+- [x] Bootstrap project plugin.
+- [x] Integrasi Citizens.
+- [x] Registrasi NPC shop.
+- [x] NPC membuka GUI shop saat diinteraksi.
+- [x] BUY item.
+- [x] SELL item.
+- [x] Mode BUY-only / SELL-only / BUY+SELL.
+- [x] Harga statis per item.
+- [x] Stock engine sederhana.
+- [x] Validasi saldo player.
+- [x] Validasi inventory penuh/kosong.
+- [x] Atomic-style transaction flow / best-effort rollback bila transaksi gagal.
+- [x] Anti double-click / anti spam transaksi.
+- [x] Audit log lokal.
+- [x] Discord audit log dasar.
+- [x] Tidak ada command shop untuk player.
+
+**Status implementasi:** core beta.1 sudah berhasil compile melalui GitHub Actions. Runtime QA di server Paper masih wajib dilakukan menggunakan [`docs/BETA1_TEST_PLAN.md`](docs/BETA1_TEST_PLAN.md) sebelum beta.1 dianggap release-ready.
 
 Exit criteria:
 - transaksi tidak bisa menghasilkan item/uang ganda;
