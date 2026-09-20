@@ -11,6 +11,30 @@ Format mengikuti prinsip Keep a Changelog dan versioning proyek akan menggunakan
 - Roadmap development awal.
 - Konsep NPC-only economy untuk Vephilim Roleplay.
 
+## [0.1.0-beta.1-RC3]
+
+### Fixed
+- Validasi slot listing kini memastikan `slot < size` sehingga konfigurasi slot di luar GUI ditolak sebelum player membuka shop.
+- Duplicate slot dalam shop kini benar-benar ditolak saat load/reload, bukan baru berpotensi menimpa item GUI.
+- Reload `config.yml` sekarang divalidasi secara strict sebelum runtime lama disentuh; YAML invalid tidak lagi dapat membuat config in-memory berubah sebagian.
+- Registrasi listener runtime baru sekarang memiliki rollback cleanup jika registrasi gagal.
+
+### Changed
+- `mode` tetap menjadi sumber kebenaran arah transaksi. `buy-price` tidak otomatis mengaktifkan BUY ketika mode masih `SELL`, dan sebaliknya.
+- Listing dengan harga pada arah yang dinonaktifkan sekarang menghasilkan warning console yang eksplisit saat startup/reload.
+- `/cve reload` melaporkan jumlah warning konfigurasi bila ada.
+- `/cve status` menampilkan `configWarnings`.
+- Contoh `shops.yml` sekarang menjelaskan perbedaan `mode` dan harga agar admin tidak mengira harga saja mengaktifkan arah transaksi.
+- Artifact/version candidate dinaikkan menjadi `0.1.0-beta.1-RC3`.
+
+### Security / Safety
+- Invalid `config.yml` atau `shops.yml` tidak mengganti runtime lama yang masih sehat.
+- Konfigurasi slot ambigu/out-of-range tidak dapat menghasilkan GUI dengan mapping listing yang salah.
+
+### Status
+- `0.1.0-beta.1-RC3` menggantikan RC2 sebagai kandidat runtime QA.
+- BUY/SELL satuan dan bulk telah lolos pengujian awal user; audit lanjutan tetap berjalan sebelum `beta.1` final.
+
 ## [0.1.0-beta.1-RC2]
 
 ### Added
