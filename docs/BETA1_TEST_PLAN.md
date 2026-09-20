@@ -2,7 +2,7 @@
 
 Dokumen ini dipakai sebelum `beta.1` dianggap siap dipasang sebagai build uji Vephilim Roleplay.
 
-Target build saat ini: `0.1.0-beta.1-RC6`.
+Target build saat ini: `0.1.0-beta.1-RC7`.
 
 ## Prasyarat
 
@@ -54,12 +54,12 @@ Harga saja tidak mengaktifkan arah transaksi.
 
 ## Startup Diagnostics
 
-- [ ] Console menampilkan version RC6 saat plugin enable.
-- [ ] Console menampilkan jumlah shop, shop enabled, NPC binding, listing, stock entry, rejected definition, config warning, dan safety state.
+- [ ] Console menampilkan version RC7 saat plugin enable.
+- [ ] Console menampilkan jumlah shop, shop enabled, NPC binding, listing, stock entry, pending transaction, rejected definition, config warning, dan safety state.
 - [ ] Jika tidak ada active NPC binding, plugin tetap enable tetapi memberi warning yang jelas.
 - [ ] Vault economy provider yang dipakai tercetak di console.
 - [ ] Nilai transaction guard efektif (cooldown, bulk, max amount, NPC distance) tercetak di console.
-- [ ] `/cve status` menampilkan `safety=OK` pada kondisi normal.
+- [ ] `/cve status` menampilkan `safety=OK` dan `pendingTx=0` pada kondisi normal.
 
 ## `/cve doctor` Health Diagnostics
 
@@ -87,6 +87,9 @@ Doctor tidak boleh mengubah balance, inventory, stock, shop binding, atau safety
 - [ ] Discord audit enabled dengan URL invalid menghasilkan `FAIL`, tetapi doctor tidak mengirim HTTP/webhook test.
 - [ ] Safety normal menghasilkan `PASS` dan tidak membuat `safety.lock`.
 - [ ] Safety stop aktif menghasilkan `FAIL` lengkap dengan tx/reason ringkas dan tidak melakukan unlock.
+- [ ] Kondisi normal menghasilkan `PASS pending-transactions` dengan pending=0.
+- [ ] Pending transaction file menghasilkan `FAIL pending-transactions`.
+- [ ] Pending transaction tanpa safety STOPPED menghasilkan `FAIL pending-safety-correlation`.
 
 ## Functional Tests
 
@@ -147,8 +150,10 @@ Doctor tidak boleh mengubah balance, inventory, stock, shop binding, atau safety
 ## Anti-abuse / Consistency
 
 - [ ] Spam klik tidak menghasilkan transaksi ganda di luar transaksi yang sah.
+- [ ] Re-entrant/overlapping transaction pada player yang sama ditolak sebagai `BUSY`.
+- [ ] Transaction execution dari thread async ditolak sebelum mutation bisnis dijalankan.
 - [ ] Double-click inventory tidak memindahkan item shop GUI.
-- [ ] Drag item ke GUI shop diblokir.
+- [ ] Semua inventory drag diblokir selama GUI shop terbuka.
 - [ ] Shift click dari inventory player tidak memasukkan item ke GUI shop.
 - [ ] Stock tidak pernah menjadi negatif.
 - [ ] Stock tidak pernah melewati `max-stock`.
@@ -156,7 +161,30 @@ Doctor tidak boleh mengubah balance, inventory, stock, shop binding, atau safety
 - [ ] Config `initial-stock` tidak mereset stock runtime setelah restart/reload.
 - [ ] Economy failure tidak menghasilkan item gratis.
 - [ ] Kegagalan persistence menghasilkan audit `FAILED` dan mencoba rollback.
+- [ ] Helper inventory mengembalikan snapshot awal jika add/remove internal gagal setengah jalan.
 - [ ] Player quit menghapus cooldown state tanpa mempengaruhi stock/saldo.
+
+## RC7 Write-Ahead Transaction Journal / Crash Window
+
+Bagian ini adalah failure injection. Gunakan staging/test server, jangan production.
+
+- [ ] BUY/SELL valid membuat file `pending-transactions/<tx>.yml` sebelum mutation pertama.
+- [ ] Pending journal menyimpan tx ID, player UUID/name, shop, listing, type, amount, unit price, total, stock-before, timestamp, dan stage.
+- [ ] Successful BUY/SELL menghapus pending journal setelah `stock.yml` berhasil dipersist.
+- [ ] Setelah transaksi normal selesai, `/cve status` menunjukkan `pendingTx=0`.
+- [ ] Simulasikan hard stop/crash setelah journal `PREPARED`; restart menemukan evidence dan mengaktifkan safety stop.
+- [ ] Simulasikan crash setelah BUY `MONEY_WITHDRAWN`; restart tetap STOPPED dan journal tidak dihapus otomatis.
+- [ ] Simulasikan crash setelah BUY `ITEM_ADDED`; restart tetap STOPPED untuk rekonsiliasi saldo/item/stock.
+- [ ] Simulasikan crash setelah SELL `ITEM_REMOVED`; restart tetap STOPPED.
+- [ ] Simulasikan crash setelah SELL `MONEY_DEPOSITED`; restart tetap STOPPED.
+- [ ] Simulasikan crash setelah stock sudah persisted tetapi sebelum journal cleanup; stage `STOCK_PERSISTED` tetap memicu fail-closed agar admin memastikan transaksi memang committed.
+- [ ] Journal corrupt/invalid tetap terdeteksi oleh scan dan tidak dianggap transaksi bersih.
+- [ ] Journal write/stage/finalization failure mengaktifkan persistent safety stop.
+- [ ] `/cve reload` tidak menghapus pending evidence dan tidak melewati safety stop.
+- [ ] `/cve doctor` menampilkan pending transaction sebagai `FAIL`.
+- [ ] Setelah admin merekonsiliasi saldo/item/stock berdasarkan transaction ID, `/cve safety unlock CONFIRM` mengarsipkan pending files ke `transaction-recovery/`.
+- [ ] Recovery append record ke `transaction-recovery.log` dengan actor dan jumlah evidence.
+- [ ] Setelah unlock sukses, `pendingTx=0`, safety=OK, dan evidence raw tetap tersedia di arsip recovery.
 
 ## Persistent Transaction Safety Stop / Recovery
 
@@ -168,14 +196,14 @@ Bagian ini sengaja untuk failure injection/staging; jangan dilakukan di server p
 - [ ] Setelah safety stop aktif, semua transaksi BUY/SELL berikutnya ditolak tanpa mutation saldo/item/stock.
 - [ ] NPC shop tidak dapat dibuka selama safety stop aktif dan player menerima `messages.safety-stop`.
 - [ ] GUI shop yang sedang terbuka ditutup ketika safety stop terpicu.
-- [ ] `/cve status` dan `/cve safety status` menampilkan timestamp stop, transaction ID, persistence state, dan ringkasan reason.
+- [ ] `/cve status` dan `/cve safety status` menampilkan timestamp stop, transaction ID, persistence state, pending transaction count, dan ringkasan reason.
 - [ ] `/cve reload` tidak mereset safety stop.
 - [ ] Restart server/plugin dengan `safety.lock` masih ada tetap menghasilkan state `STOPPED`; restart bukan recovery mechanism.
 - [ ] `safety.lock` invalid/corrupt membuat plugin tetap fail-closed, bukan menganggap safety normal.
 - [ ] `/cve safety unlock` tanpa kata `CONFIRM` tidak membuka ekonomi.
 - [ ] `/cve safety unlock CONFIRM` menolak recovery bila stock snapshot tidak dapat di-flush.
-- [ ] Setelah admin memeriksa transaction ID, saldo, item, stock, dan audit log, `/cve safety unlock CONFIRM` membuka transaksi tanpa restart.
-- [ ] Unlock sukses menghapus active `safety.lock`, menyimpan raw evidence terakhir ke `safety.lock.last`, dan menambah record ke `safety-history.log`.
+- [ ] Setelah admin memeriksa transaction ID, saldo, item, stock, pending journal, dan audit log, `/cve safety unlock CONFIRM` membuka transaksi tanpa restart.
+- [ ] Unlock sukses menghapus active `safety.lock`, menyimpan raw evidence terakhir ke `safety.lock.last`, menambah record ke `safety-history.log`, dan mengarsipkan pending transaction evidence.
 - [ ] Restart setelah unlock tetap menunjukkan `safety=OK`.
 - [ ] Pada BUY persistence failure, jika item rollback gagal, refund tidak dilakukan otomatis sehingga tidak tercipta item gratis + uang kembali.
 - [ ] Pada SELL persistence failure, jika payout rollback gagal, item tidak dikembalikan otomatis sehingga tidak tercipta kombinasi payout + item kembali.
@@ -222,7 +250,8 @@ Bagian ini sengaja untuk failure injection/staging; jangan dilakukan di server p
 - [ ] Simulasikan `stock.yml` corrupt dengan backup valid: recovery berhasil dan startup log memberi warning recovery.
 - [ ] Simulasikan `stock.yml` dan backup corrupt: plugin fail-closed/disable dan tidak menghasilkan stock reset diam-diam.
 - [ ] Jika load stock gagal, shutdown tidak menulis snapshot kosong baru yang menimpa bukti stock corrupt.
+- [ ] Hard crash dengan pending journal tidak membuka ekonomi pada restart berikutnya.
 
 ## Exit Criteria beta.1
 
-`beta.1` baru dianggap lulus jika jalur BUY/SELL utama, safe runtime reload, `/cve doctor`, NPC-only proximity guard, persistence/recovery stock, config validation, audit trail, clean shutdown, persistent safety-stop recovery, dan skenario anti-dupe di atas lolos di server uji. Fitur governance, admin GUI, dynamic pricing, dan market event tetap di luar scope beta.1.
+`beta.1` baru dianggap lulus jika jalur BUY/SELL utama, safe runtime reload, `/cve doctor`, NPC-only proximity guard, persistence/recovery stock, write-ahead transaction journal, config validation, audit trail, clean shutdown, persistent safety-stop recovery, dan skenario anti-dupe/regression RC7 di atas lolos di server uji. Fitur governance, admin GUI, dynamic pricing, dan market event tetap di luar scope beta.1.
