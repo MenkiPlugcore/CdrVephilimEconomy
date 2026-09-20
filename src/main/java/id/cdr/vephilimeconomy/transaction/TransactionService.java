@@ -24,40 +24,49 @@ public final class TransactionService {
     private final Logger logger;
     private final long cooldownMillis;
     private final int maxAmount;
+    private final boolean auditRejected;
+    private final boolean auditBusyRejected;
     private final Map<String, ReentrantLock> listingLocks = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastTransaction = new ConcurrentHashMap<>();
 
     public TransactionService(EconomyBridge economy, StockRepository stocks, AuditService audit, Logger logger,
-                              long cooldownMillis, int maxAmount) {
+                              long cooldownMillis, int maxAmount,
+                              boolean auditRejected, boolean auditBusyRejected) {
         this.economy = economy;
         this.stocks = stocks;
         this.audit = audit;
         this.logger = logger;
         this.cooldownMillis = Math.max(0L, cooldownMillis);
         this.maxAmount = Math.max(1, Math.min(2304, maxAmount));
+        this.auditRejected = auditRejected;
+        this.auditBusyRejected = auditBusyRejected;
     }
 
     public TransactionResult execute(Player player, Shop shop, ShopListing listing, TransactionType type, int amount) {
         UUID transactionId = UUID.randomUUID();
         if (amount <= 0 || amount > maxAmount) {
-            return TransactionResult.failed(transactionId, TransactionFailure.NOT_ALLOWED);
+            return reject(transactionId, player, shop, listing, type, amount,
+                    TransactionFailure.NOT_ALLOWED, "amount outside allowed range 1-" + maxAmount);
         }
         if ((type == TransactionType.BUY && !listing.mode().canBuy())
                 || (type == TransactionType.SELL && !listing.mode().canSell())) {
-            return TransactionResult.failed(transactionId, TransactionFailure.NOT_ALLOWED);
+            return reject(transactionId, player, shop, listing, type, amount,
+                    TransactionFailure.NOT_ALLOWED, "listing mode does not allow " + type);
         }
 
         long now = System.currentTimeMillis();
         Long previous = lastTransaction.get(player.getUniqueId());
         if (previous != null && now - previous < cooldownMillis) {
-            return TransactionResult.failed(transactionId, TransactionFailure.BUSY);
+            return reject(transactionId, player, shop, listing, type, amount,
+                    TransactionFailure.BUSY, "player transaction cooldown");
         }
         lastTransaction.put(player.getUniqueId(), now);
 
         String lockKey = shop.id() + "|" + listing.id();
         ReentrantLock lock = listingLocks.computeIfAbsent(lockKey, ignored -> new ReentrantLock());
         if (!lock.tryLock()) {
-            return TransactionResult.failed(transactionId, TransactionFailure.BUSY);
+            return reject(transactionId, player, shop, listing, type, amount,
+                    TransactionFailure.BUSY, "listing transaction lock busy");
         }
 
         try {
@@ -69,21 +78,32 @@ public final class TransactionService {
         }
     }
 
+    public void forgetPlayer(UUID playerId) {
+        if (playerId != null) {
+            lastTransaction.remove(playerId);
+        }
+    }
+
     private TransactionResult buy(UUID tx, Player player, Shop shop, ShopListing listing, int amount) {
         int stockBefore = stocks.getStock(shop.id(), listing.id());
         if (stockBefore < amount) {
-            return TransactionResult.failed(tx, TransactionFailure.INSUFFICIENT_STOCK);
+            return reject(tx, player, shop, listing, TransactionType.BUY, amount,
+                    TransactionFailure.INSUFFICIENT_STOCK,
+                    "requested=" + amount + "; available=" + stockBefore);
         }
         if (!InventoryUtil.canFit(player.getInventory(), listing.material(), amount)) {
-            return TransactionResult.failed(tx, TransactionFailure.INVENTORY_FULL);
+            return reject(tx, player, shop, listing, TransactionType.BUY, amount,
+                    TransactionFailure.INVENTORY_FULL, "insufficient inventory capacity");
         }
 
         double total = safeTotal(listing.buyPrice(), amount);
         if (!Double.isFinite(total) || total <= 0) {
-            return internalFailure(tx, player, shop, listing, TransactionType.BUY, amount, stockBefore, "invalid calculated total");
+            return internalFailure(tx, player, shop, listing, TransactionType.BUY, amount, stockBefore,
+                    "invalid calculated total");
         }
         if (!economy.has(player, total)) {
-            return TransactionResult.failed(tx, TransactionFailure.INSUFFICIENT_MONEY);
+            return reject(tx, player, shop, listing, TransactionType.BUY, amount,
+                    TransactionFailure.INSUFFICIENT_MONEY, "insufficient player balance");
         }
 
         EconomyBridge.OperationResult withdrawal = economy.withdraw(player, total);
@@ -121,15 +141,21 @@ public final class TransactionService {
     private TransactionResult sell(UUID tx, Player player, Shop shop, ShopListing listing, int amount) {
         int stockBefore = stocks.getStock(shop.id(), listing.id());
         if ((long) stockBefore + amount > listing.maxStock()) {
-            return TransactionResult.failed(tx, TransactionFailure.MAX_STOCK);
+            return reject(tx, player, shop, listing, TransactionType.SELL, amount,
+                    TransactionFailure.MAX_STOCK,
+                    "current=" + stockBefore + "; requested=" + amount + "; max=" + listing.maxStock());
         }
-        if (InventoryUtil.countPlain(player.getInventory(), listing.material()) < amount) {
-            return TransactionResult.failed(tx, TransactionFailure.INSUFFICIENT_ITEMS);
+        int owned = InventoryUtil.countPlain(player.getInventory(), listing.material());
+        if (owned < amount) {
+            return reject(tx, player, shop, listing, TransactionType.SELL, amount,
+                    TransactionFailure.INSUFFICIENT_ITEMS,
+                    "requested=" + amount + "; owned=" + owned);
         }
 
         double total = safeTotal(listing.sellPrice(), amount);
         if (!Double.isFinite(total) || total <= 0) {
-            return internalFailure(tx, player, shop, listing, TransactionType.SELL, amount, stockBefore, "invalid calculated total");
+            return internalFailure(tx, player, shop, listing, TransactionType.SELL, amount, stockBefore,
+                    "invalid calculated total");
         }
 
         if (!InventoryUtil.removePlain(player.getInventory(), listing.material(), amount)) {
@@ -159,6 +185,22 @@ public final class TransactionService {
         TransactionResult result = new TransactionResult(tx, true, TransactionFailure.NONE, amount,
                 listing.sellPrice(), total, stockBefore, stockAfter);
         record(player, shop, listing, TransactionType.SELL, result, "SUCCESS", "");
+        return result;
+    }
+
+    private TransactionResult reject(UUID tx, Player player, Shop shop, ShopListing listing, TransactionType type,
+                                     int amount, TransactionFailure failure, String detail) {
+        int stock = stocks.getStock(shop.id(), listing.id());
+        double unitPrice = type == TransactionType.BUY ? listing.buyPrice() : listing.sellPrice();
+        double total = safeTotal(unitPrice, amount);
+        if (!Double.isFinite(total) || amount <= 0 || total < 0) {
+            total = 0.0D;
+        }
+
+        TransactionResult result = new TransactionResult(tx, false, failure, amount, unitPrice, total, stock, stock);
+        if (auditRejected && (failure != TransactionFailure.BUSY || auditBusyRejected)) {
+            record(player, shop, listing, type, result, "REJECTED", detail);
+        }
         return result;
     }
 
