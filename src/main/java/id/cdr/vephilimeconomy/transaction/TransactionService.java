@@ -84,6 +84,15 @@ public final class TransactionService {
         }
     }
 
+    public void clearState() {
+        lastTransaction.clear();
+        listingLocks.clear();
+    }
+
+    public int trackedPlayerCount() {
+        return lastTransaction.size();
+    }
+
     private TransactionResult buy(UUID tx, Player player, Shop shop, ShopListing listing, int amount) {
         int stockBefore = stocks.getStock(shop.id(), listing.id());
         if (stockBefore < amount) {
