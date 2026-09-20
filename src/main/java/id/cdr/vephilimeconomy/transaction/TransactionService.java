@@ -23,20 +23,23 @@ public final class TransactionService {
     private final AuditService audit;
     private final Logger logger;
     private final long cooldownMillis;
+    private final int maxAmount;
     private final Map<String, ReentrantLock> listingLocks = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastTransaction = new ConcurrentHashMap<>();
 
-    public TransactionService(EconomyBridge economy, StockRepository stocks, AuditService audit, Logger logger, long cooldownMillis) {
+    public TransactionService(EconomyBridge economy, StockRepository stocks, AuditService audit, Logger logger,
+                              long cooldownMillis, int maxAmount) {
         this.economy = economy;
         this.stocks = stocks;
         this.audit = audit;
         this.logger = logger;
         this.cooldownMillis = Math.max(0L, cooldownMillis);
+        this.maxAmount = Math.max(1, Math.min(2304, maxAmount));
     }
 
     public TransactionResult execute(Player player, Shop shop, ShopListing listing, TransactionType type, int amount) {
         UUID transactionId = UUID.randomUUID();
-        if (amount <= 0 || amount > 2304) {
+        if (amount <= 0 || amount > maxAmount) {
             return TransactionResult.failed(transactionId, TransactionFailure.NOT_ALLOWED);
         }
         if ((type == TransactionType.BUY && !listing.mode().canBuy())
@@ -85,12 +88,15 @@ public final class TransactionService {
 
         EconomyBridge.OperationResult withdrawal = economy.withdraw(player, total);
         if (!withdrawal.success()) {
-            return internalFailure(tx, player, shop, listing, TransactionType.BUY, amount, stockBefore, "withdraw failed: " + withdrawal.errorMessage());
+            return internalFailure(tx, player, shop, listing, TransactionType.BUY, amount, stockBefore,
+                    "withdraw failed: " + withdrawal.errorMessage());
         }
 
         if (!InventoryUtil.addPlain(player.getInventory(), listing.material(), amount)) {
             EconomyBridge.OperationResult refund = economy.deposit(player, total);
-            String detail = refund.success() ? "inventory mutation failed; money refunded" : "CRITICAL: inventory mutation failed and money refund failed: " + refund.errorMessage();
+            String detail = refund.success()
+                    ? "inventory mutation failed; money refunded"
+                    : "CRITICAL: inventory mutation failed and money refund failed: " + refund.errorMessage();
             return internalFailure(tx, player, shop, listing, TransactionType.BUY, amount, stockBefore, detail);
         }
 
@@ -106,7 +112,8 @@ public final class TransactionService {
             return internalFailure(tx, player, shop, listing, TransactionType.BUY, amount, stockBefore, detail);
         }
 
-        TransactionResult result = new TransactionResult(tx, true, TransactionFailure.NONE, amount, listing.buyPrice(), total, stockBefore, stockAfter);
+        TransactionResult result = new TransactionResult(tx, true, TransactionFailure.NONE, amount,
+                listing.buyPrice(), total, stockBefore, stockAfter);
         record(player, shop, listing, TransactionType.BUY, result, "SUCCESS", "");
         return result;
     }
@@ -126,7 +133,8 @@ public final class TransactionService {
         }
 
         if (!InventoryUtil.removePlain(player.getInventory(), listing.material(), amount)) {
-            return internalFailure(tx, player, shop, listing, TransactionType.SELL, amount, stockBefore, "item removal failed after pre-validation");
+            return internalFailure(tx, player, shop, listing, TransactionType.SELL, amount, stockBefore,
+                    "item removal failed after pre-validation");
         }
 
         EconomyBridge.OperationResult deposit = economy.deposit(player, total);
@@ -148,7 +156,8 @@ public final class TransactionService {
             return internalFailure(tx, player, shop, listing, TransactionType.SELL, amount, stockBefore, detail);
         }
 
-        TransactionResult result = new TransactionResult(tx, true, TransactionFailure.NONE, amount, listing.sellPrice(), total, stockBefore, stockAfter);
+        TransactionResult result = new TransactionResult(tx, true, TransactionFailure.NONE, amount,
+                listing.sellPrice(), total, stockBefore, stockAfter);
         record(player, shop, listing, TransactionType.SELL, result, "SUCCESS", "");
         return result;
     }
