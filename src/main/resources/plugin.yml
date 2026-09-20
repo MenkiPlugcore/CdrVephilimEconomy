@@ -1,5 +1,5 @@
 name: CdrVephilimEconomy
-version: '0.1.0-beta.4-RC2'
+version: '0.1.0-beta.4-RC3'
 main: id.cdr.vephilimeconomy.CdrVephilimEconomy
 api-version: '1.21.11'
 authors: [MenkiPlugcore]
@@ -9,8 +9,8 @@ depend: [Citizens, Vault]
 
 commands:
   cve:
-    description: Administrative and economy governance command for CdrVephilimEconomy.
-    usage: /cve <reload|status|doctor|safety|shop|governance>
+    description: Administrative, market pricing, and economy governance command for CdrVephilimEconomy.
+    usage: /cve <reload|status|doctor|safety|shop|governance|pricing>
     aliases: [veconomy]
 
 permissions:
@@ -31,6 +31,8 @@ permissions:
       cdrvephilimeconomy.governance.view: true
       cdrvephilimeconomy.governance.approve: true
       cdrvephilimeconomy.governance.admin: true
+      cdrvephilimeconomy.pricing.view: true
+      cdrvephilimeconomy.pricing.manage: true
 
   cdrvephilimeconomy.shop.view:
     description: View shop list, details, schema, and validation status.
@@ -54,7 +56,7 @@ permissions:
     description: Add, remove, move, and change listing modes.
     default: false
   cdrvephilimeconomy.shop.price:
-    description: Change listing buy and sell prices.
+    description: Change listing buy and sell base prices.
     default: false
   cdrvephilimeconomy.shop.stock:
     description: Change listing stock configuration and runtime stock.
@@ -72,3 +74,10 @@ permissions:
   cdrvephilimeconomy.governance.admin:
     description: Grant, revoke, reload, and recover economy governance state.
     default: op
+
+  cdrvephilimeconomy.pricing.view:
+    description: View dynamic pricing status, policies, and market statistics globally.
+    default: false
+  cdrvephilimeconomy.pricing.manage:
+    description: Manage dynamic pricing policy without role guardrails.
+    default: false
