@@ -10,15 +10,18 @@ public final class Shop {
     private final int npcId;
     private final int size;
     private final boolean enabled;
+    private final String manager;
     private final Map<String, ShopListing> listings;
     private final Map<Integer, ShopListing> listingsBySlot;
 
-    public Shop(String id, String displayName, int npcId, int size, boolean enabled, Map<String, ShopListing> listings) {
+    public Shop(String id, String displayName, int npcId, int size, boolean enabled, String manager,
+                Map<String, ShopListing> listings) {
         this.id = id;
         this.displayName = displayName;
         this.npcId = npcId;
         this.size = size;
         this.enabled = enabled;
+        this.manager = manager == null ? "" : manager;
         this.listings = Collections.unmodifiableMap(new LinkedHashMap<>(listings));
 
         Map<Integer, ShopListing> bySlot = new LinkedHashMap<>();
@@ -51,6 +54,10 @@ public final class Shop {
 
     public boolean enabled() {
         return enabled;
+    }
+
+    public String manager() {
+        return manager;
     }
 
     public Map<String, ShopListing> listings() {
