@@ -5,6 +5,7 @@ import id.cdr.vephilimeconomy.shop.ListingMode;
 import id.cdr.vephilimeconomy.shop.Shop;
 import id.cdr.vephilimeconomy.shop.ShopListing;
 import id.cdr.vephilimeconomy.shop.ShopRegistry;
+import id.cdr.vephilimeconomy.shop.ShopsSchemaManager;
 import id.cdr.vephilimeconomy.storage.StockRepository;
 import org.bukkit.Material;
 import org.bukkit.configuration.ConfigurationSection;
@@ -39,6 +40,47 @@ public final class ShopAdminService {
         this.backupFile = new File(plugin.getDataFolder(), "shops.yml.admin.bak");
         this.candidateFile = new File(plugin.getDataFolder(), "shops.yml.admin.candidate");
         this.writeTempFile = new File(plugin.getDataFolder(), "shops.yml.admin.tmp");
+
+        try {
+            ShopsSchemaManager.SchemaStatus status = ShopsSchemaManager.ensureCurrent(shopsFile, plugin.getLogger());
+            if (status.migrated()) {
+                try {
+                    audit.record("SYSTEM", "SHOPS_SCHEMA_MIGRATION_SUCCESS", status.detail());
+                } catch (IOException exception) {
+                    plugin.getLogger().warning("Schema migration sukses tetapi admin audit migration gagal ditulis: "
+                            + exception.getMessage());
+                }
+            }
+        } catch (IOException exception) {
+            plugin.getLogger().severe("Shop management schema initialization gagal: " + exception.getMessage());
+            plugin.getLogger().severe("Core transaction runtime tetap aktif, tetapi mutation beta.2 akan fail-closed sampai shops.yml diperbaiki.");
+        }
+    }
+
+    public Result schemaStatus() {
+        try {
+            ShopsSchemaManager.SchemaStatus status = ShopsSchemaManager.inspect(shopsFile);
+            return Result.ok("shops.yml schema=v" + status.schema() + "/v" + ShopsSchemaManager.CURRENT_SCHEMA
+                    + (status.current() ? " CURRENT" : " LEGACY; akan dimigrasikan sebelum mutation berikutnya") + ".");
+        } catch (IOException exception) {
+            return Result.fail("Schema check gagal: " + exception.getMessage());
+        }
+    }
+
+    public Result validateConfig() {
+        try {
+            ShopsSchemaManager.SchemaStatus schema = ShopsSchemaManager.inspect(shopsFile);
+            ShopRegistry candidate = new ShopRegistry();
+            candidate.load(shopsFile, plugin.getLogger());
+            if (candidate.rejectedDefinitionCount() > 0) {
+                return Result.fail("shops.yml ditolak: rejectedDefinitions=" + candidate.rejectedDefinitionCount() + ".");
+            }
+            return Result.ok("Valid: schema=v" + schema.schema() + ", shops=" + candidate.shopCount()
+                    + ", listings=" + candidate.listingCount() + ", npcBindings=" + candidate.activeBindingCount()
+                    + ", warnings=" + candidate.configurationWarningCount() + ".");
+        } catch (IOException exception) {
+            return Result.fail("Validation gagal: " + exception.getMessage());
+        }
     }
 
     public Result createShop(String actor, String rawId, String displayName, int size) {
@@ -85,6 +127,34 @@ public final class ShopAdminService {
             }
             yaml.set(path, null);
         });
+    }
+
+    public Result setDisplayName(String actor, String rawId, String displayName) {
+        String id = normalizeOrNull(rawId, "shop");
+        if (id == null) {
+            return Result.fail("Shop ID tidak valid.");
+        }
+        String value = displayName == null ? "" : displayName.trim();
+        if (value.isBlank()) {
+            return Result.fail("Display name tidak boleh kosong.");
+        }
+        if (value.length() > 128) {
+            return Result.fail("Display name maksimal 128 karakter.");
+        }
+        return mutate(actor, "SHOP_DISPLAY_NAME", "shop=" + id + "; display=" + value,
+                yaml -> requireShop(yaml, id).set("display-name", value));
+    }
+
+    public Result setSize(String actor, String rawId, int size) {
+        if (size < 9 || size > 54 || size % 9 != 0) {
+            return Result.fail("Size harus kelipatan 9 antara 9-54.");
+        }
+        String id = normalizeOrNull(rawId, "shop");
+        if (id == null) {
+            return Result.fail("Shop ID tidak valid.");
+        }
+        return mutate(actor, "SHOP_SIZE", "shop=" + id + "; size=" + size,
+                yaml -> requireShop(yaml, id).set("size", size));
     }
 
     public Result bindNpc(String actor, String rawId, int npcId) {
@@ -201,6 +271,19 @@ public final class ShopAdminService {
                 yaml -> requireListing(yaml, shopId, listingId).set("mode", mode.name()));
     }
 
+    public Result setSlot(String actor, String rawShopId, String rawListingId, int slot) {
+        if (slot < 0) {
+            return Result.fail("Slot tidak boleh negatif.");
+        }
+        String shopId = normalizeOrNull(rawShopId, "shop");
+        String listingId = normalizeOrNull(rawListingId, "listing");
+        if (shopId == null || listingId == null) {
+            return Result.fail("Shop/listing ID tidak valid.");
+        }
+        return mutate(actor, "LISTING_SLOT", "shop=" + shopId + "; listing=" + listingId + "; slot=" + slot,
+                yaml -> requireListing(yaml, shopId, listingId).set("slot", slot));
+    }
+
     public Result setInitialStock(String actor, String rawShopId, String rawListingId, int value) {
         if (value < 0) {
             return Result.fail("initial-stock tidak boleh negatif.");
@@ -287,6 +370,12 @@ public final class ShopAdminService {
 
     private synchronized Result mutate(String actor, String action, String detail, YamlMutation mutation) {
         try {
+            ShopsSchemaManager.ensureCurrent(shopsFile, plugin.getLogger());
+        } catch (IOException exception) {
+            return Result.fail("Mutation diblokir karena schema shops.yml tidak sehat: " + exception.getMessage());
+        }
+
+        try {
             audit.record(actor, action + "_REQUEST", detail);
         } catch (IOException exception) {
             return Result.fail("Perubahan dibatalkan karena admin audit tidak dapat ditulis: " + exception.getMessage());
@@ -298,6 +387,7 @@ public final class ShopAdminService {
             original = Files.readAllBytes(shopsFile.toPath());
             yaml = loadStrict(shopsFile);
             mutation.apply(yaml);
+            ShopsSchemaManager.stampMutation(yaml);
             validateCandidate(yaml);
         } catch (IOException | RuntimeException exception) {
             tryRecordFailure(actor, action + "_REJECTED", detail + "; error=" + exception.getMessage());
@@ -344,6 +434,10 @@ public final class ShopAdminService {
     private void validateCandidate(YamlConfiguration yaml) throws IOException {
         try {
             yaml.save(candidateFile);
+            ShopsSchemaManager.SchemaStatus schema = ShopsSchemaManager.inspect(candidateFile);
+            if (!schema.current()) {
+                throw new IOException("Candidate masih memakai legacy schema v" + schema.schema() + ".");
+            }
             ShopRegistry candidate = new ShopRegistry();
             candidate.load(candidateFile, plugin.getLogger());
             if (candidate.rejectedDefinitionCount() > 0) {
