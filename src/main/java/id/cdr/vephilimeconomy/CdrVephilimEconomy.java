@@ -2,6 +2,7 @@ package id.cdr.vephilimeconomy;
 
 import id.cdr.vephilimeconomy.audit.AuditService;
 import id.cdr.vephilimeconomy.command.CveCommand;
+import id.cdr.vephilimeconomy.diagnostic.DoctorService;
 import id.cdr.vephilimeconomy.economy.EconomyBridge;
 import id.cdr.vephilimeconomy.economy.VaultEconomyBridge;
 import id.cdr.vephilimeconomy.gui.ShopGuiListener;
@@ -228,6 +229,10 @@ public final class CdrVephilimEconomy extends JavaPlugin {
                 ? " ECONOMY SAFETY STOP masih aktif; reload tidak mereset safety lock."
                 : "";
         return new ReloadResult(true, "Reload aman selesai. Restart server tidak diperlukan." + warningSuffix + safetySuffix);
+    }
+
+    public DoctorService.Report runDoctor() {
+        return new DoctorService(this, shopRegistry, stockRepository, auditService, safetyState, economy).run();
     }
 
     public String statusSummary() {
