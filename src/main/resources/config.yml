@@ -71,6 +71,28 @@ governance:
     # Mencegah satu staff memenuhi queue dengan request aktif.
     max-pending-per-requester: 5
 
+    # RC4: perubahan yang sangat besar membutuhkan dua reviewer berbeda.
+    # Review pertama hanya mencatat durable attestation; mutation baru berjalan pada review kedua.
+    two-person:
+      enabled: true
+
+      # Absolute perubahan harga >= threshold ini dianggap extreme.
+      # Contoh 100 -> 200 = 100% dan membutuhkan dua reviewer.
+      price-change-percent-threshold: 100.0
+
+      # Harga dari basis 0 tidak punya persentase yang aman, sehingga default dianggap extreme.
+      price-from-zero-requires-two: true
+
+      # ADD/REMOVE stock dengan delta >= threshold ini dianggap extreme.
+      stock-delta-threshold: 4096
+
+      # Runtime stock SET adalah mutation berisiko tinggi dan default membutuhkan dua reviewer.
+      stock-set-requires-two: true
+
+      # Dari dua reviewer, minimal satu harus Royal Treasurer, governance admin, atau full admin.
+      # Permission governance.approve saja tidak dianggap senior.
+      require-at-least-one-senior-reviewer: true
+
   quota:
     # RC3 rolling quota untuk mutation role-only yang masih berada di bawah limit per operasi.
     # Permission beta.2 eksplisit, full admin, dan Royal Treasurer tidak dibatasi quota ini.
