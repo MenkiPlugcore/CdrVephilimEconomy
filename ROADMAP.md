@@ -80,13 +80,13 @@ Target: admin dapat mengelola shop tanpa edit source code atau bergantung pada e
 - [x] Deterministic admin mutation recovery berbasis original/candidate SHA-256.
 - [x] Schema migration pending marker + verified backup/candidate hash.
 - [x] Interrupted schema migration recovery / fail-closed ambiguity guard.
-- [ ] Admin GUI opsional untuk operasi rutin tanpa command panjang.
-- [ ] Final beta.2 runtime regression + recovery drill.
-- [ ] Finalisasi `0.1.0-beta.2`.
+- [x] Final beta.2 runtime regression.
+- [x] Finalisasi `0.1.0-beta.2`.
+- [ ] Admin GUI opsional untuk operasi rutin tanpa command panjang — deferred, bukan blocking beta.2.
 
-**Status implementasi:** `0.1.0-beta.2-RC3` pada branch `dev/beta.2`. RC1 dan RC2 smoke test dinyatakan aman. RC3 adalah kandidat hardening terakhir: fokus pada crash-window perubahan config admin, interrupted schema migration recovery, dan final regression tanpa mengubah core transaction engine beta.1.
+**Status implementasi:** `0.1.0-beta.2` **FINAL / frozen Shop Management baseline**. RC1-RC3 sudah ditutup dan runtime testing normal dinyatakan aman sebelum finalisasi. Fitur baru setelah titik ini masuk beta.3; patch beta.2 hanya untuk bug/regression pada baseline ini.
 
-Jika RC3 lolos runtime regression, tahap berikutnya langsung `0.1.0-beta.2 FINAL`; RC tambahan hanya dibuat bila ada bug nyata.
+Dokumentasi final: [`docs/BETA2_FINAL.md`](docs/BETA2_FINAL.md).
 
 ## beta.3 — Economy Staff & Governance
 
