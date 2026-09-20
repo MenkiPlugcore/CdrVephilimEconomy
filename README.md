@@ -1,28 +1,29 @@
 # CdrVephilimEconomy
 
-`CdrVephilimEconomy` adalah plugin economy khusus untuk **Vephilim Roleplay**.
-
-Fokus utamanya adalah membuat perdagangan terasa sebagai bagian dari dunia roleplay kerajaan: player bertransaksi melalui NPC, bukan melalui command shop biasa.
-
-## Prinsip Utama
-
-- Player **tidak memiliki command shop**.
-- Semua transaksi dilakukan melalui NPC Citizens.
-- NPC hanya menjadi front-end/interaksi dunia; logika transaksi ditangani plugin.
-- Sistem mendukung BUY, SELL, atau BUY + SELL per item.
-- Shop memiliki stok nyata yang persisten.
-- Harga masih bersifat statis agar mudah dibalance dan diaudit.
-- Semua transaksi penting memiliki audit trail.
-- Fokus utama development adalah keamanan transaksi, anti-dupe, fail-closed recovery, dan operasional admin yang terkontrol.
+`CdrVephilimEconomy` adalah plugin economy khusus **Vephilim Roleplay** dengan pendekatan NPC-first: player berdagang melalui Citizens NPC, sedangkan plugin menangani stock, harga, transaksi, recovery, audit, dan governance.
 
 ## Status
 
-**Stable beta baseline: `0.1.0-beta.2`**  
-**Frozen core baseline: `0.1.0-beta.1`**
+- **Current development:** `0.1.0-beta.3-RC1`
+- **Frozen Shop Management baseline:** `0.1.0-beta.2`
+- **Frozen Core Economy baseline:** `0.1.0-beta.1`
+- Branch development aktif: `dev/beta.3`
 
-`0.1.0-beta.2` menutup fase Shop Management. RC1 membuka command-driven management, RC2 menambahkan `shops.yml` schema v2, Discord administrative audit, dan QoL management, sedangkan RC3 menutup crash-window perubahan konfigurasi admin serta memperkeras recovery migration. Runtime smoke/regression RC1-RC3 telah dinyatakan aman sebelum finalisasi.
+beta.3 RC1 membuka **Economy Staff & Governance** tanpa mengubah transaction safety foundation beta.1/beta.2.
 
-## beta.2 Shop Management
+## Core Economy
+
+- NPC Citizens sebagai front-end transaksi.
+- BUY / SELL / BUY_SELL per listing.
+- Persistent real stock.
+- Static pricing.
+- Vault economy bridge.
+- Transaction journal + persistent safety lock.
+- Fail-closed recovery untuk stock/pending transaction.
+- Local/Discord transaction audit.
+- `/cve doctor`, `/cve safety status`, dan explicit recovery.
+
+## Shop Management beta.2
 
 ```text
 /cve shop list
@@ -47,53 +48,98 @@ Fokus utamanya adalah membuat perdagangan terasa sebagai bagian dari dunia rolep
 /cve shop stock <shop> <listing> <set|add|remove> <amount>
 ```
 
-Setiap mutation config melewati candidate validation dan runtime apply tanpa restart. Snapshot pre-change disimpan ke `shops.yml.admin.bak`, sedangkan jejak perubahan administratif disimpan di `logs/admin-audit.log`.
+Shop management memakai `shops.yml` schema v2, candidate validation, backup, admin mutation journal, local administrative audit, dan optional Discord administrative audit.
 
-## shops.yml Schema v2
+## beta.3 RC1 — Economy Staff & Governance
 
-Beta.2 memakai:
-
-```yaml
-meta:
-  schema: 2
-```
-
-File beta.1/RC1 tanpa schema dianggap legacy v1 dan dimigrasikan otomatis ketika shop management diinisialisasi. Sebelum migration dibuat backup `shops.yml.schema-v1.bak`. Migration memiliki pending marker + SHA-256 verification; jika server mati ketika migration berlangsung, plugin dapat membedakan migration yang sudah committed, perlu diulang, atau perlu dipulihkan dari backup. Schema yang lebih baru dari kemampuan plugin ditolak fail-closed.
-
-## Administrative Mutation Recovery
-
-Perubahan `shops.yml` dari command admin menggunakan durable journal. Sebelum live config diganti, plugin menyimpan hash konfigurasi original dan candidate ke:
+Tiga role internal tersedia:
 
 ```text
-shops.yml.admin.pending
+ECONOMY_STAFF
+ECONOMY_MANAGER
+ROYAL_TREASURER
 ```
 
-Jika server mati pada window antara replace file dan runtime reload, startup berikutnya membandingkan hash live dengan original/candidate. Hasil recovery dicatat ke:
+Assignment disimpan berdasarkan UUID dan dapat dibatasi ke satu atau beberapa shop.
 
 ```text
-shops.yml.admin.pending.last
-logs/admin-recovery.log
+/cve governance status
+/cve governance list
+/cve governance who <player>
+/cve governance grant <player> <role> <shop|*>
+/cve governance revoke <player> <shop|*|all>
+/cve governance reload
 ```
 
-Jika live config tidak cocok dengan original maupun candidate, mutation shop masuk **fail-closed**. BUY/SELL core tidak otomatis diubah oleh recovery admin, tetapi command mutation/stock admin diblokir sampai state diklarifikasi.
+Contoh:
 
-`/cve shop schema` dan `/cve shop validate` juga menampilkan status recovery schema/admin mutation.
+```text
+/cve governance grant Raka ECONOMY_STAFF blacksmith
+/cve governance grant Raka ECONOMY_STAFF farmer
+/cve governance grant Menki ROYAL_TREASURER *
+```
 
-## Discord Administrative Audit
+Role tidak menghapus permission beta.2. Permission lama tetap backward compatible dan dianggap explicit operator override.
 
-Admin audit Discord terpisah dari transaction audit:
+## Role Capabilities
+
+`ECONOMY_STAFF`:
+- view management diagnostics;
+- edit price pada shop scope;
+- add/remove runtime stock pada shop scope.
+
+`ECONOMY_MANAGER`:
+- seluruh capability Staff;
+- bind/unbind NPC;
+- enable/disable shop;
+- edit display name/size;
+- listing CRUD/mode/slot;
+- initial/max stock config;
+- manager metadata.
+
+`ROYAL_TREASURER`:
+- seluruh capability governance;
+- create/delete shop;
+- price/stock guardrail role tidak membatasi Treasurer.
+
+Scope `*` berarti global.
+
+## RC1 Guardrails
+
+Default `config.yml`:
 
 ```yaml
-admin-audit:
-  discord:
-    enabled: false
-    webhook-url: ""
-    include-requests: false
+governance:
+  limits:
+    economy-staff:
+      max-price-change-percent: 20.0
+      max-runtime-stock-delta: 128
+    economy-manager:
+      max-price-change-percent: 50.0
+      max-runtime-stock-delta: 1024
 ```
 
-`SUCCESS`, `FAILED`, dan `REJECTED` dapat dikirim async ke Discord. Local `admin-audit.log` tetap source of truth dan wajib berhasil ditulis sebelum mutation administratif dimulai.
+Untuk role-only Staff/Manager:
+- perubahan harga dibatasi per operasi;
+- perubahan harga dari basis `0` membutuhkan Treasurer/admin;
+- runtime stock hanya `add/remove` sesuai delta limit;
+- runtime stock `SET` membutuhkan Royal Treasurer/admin atau explicit beta.2 permission.
 
-## Granular Permissions
+RC1 belum memiliki rolling quota atau approval queue. Itu menjadi target RC berikutnya.
+
+## Governance Persistence
+
+```text
+governance.yml
+governance.yml.bak
+governance.yml.tmp
+```
+
+`governance.yml` schema v1 ditulis dengan temporary validation dan atomic replace bila filesystem mendukung. Governance storage corrupt membuat akses berbasis role fail-closed, tetapi owner dengan `cdrvephilimeconomy.admin` tetap dapat melakukan recovery.
+
+## Permissions
+
+Existing beta.2:
 
 ```text
 cdrvephilimeconomy.admin
@@ -109,56 +155,50 @@ cdrvephilimeconomy.shop.stock
 cdrvephilimeconomy.shop.manager
 ```
 
-Full `cdrvephilimeconomy.admin` mewarisi seluruh permission shop. Staff dapat diberi permission granular melalui LuckPerms tanpa full admin access.
-
-## Core Admin Commands
+New beta.3:
 
 ```text
-/cve reload
-/cve status
-/cve doctor
-/cve safety status
-/cve safety unlock CONFIRM
+cdrvephilimeconomy.governance.view
+cdrvephilimeconomy.governance.admin
 ```
 
-Tidak ada command shop untuk player.
+`cdrvephilimeconomy.admin` mewarisi semuanya.
+
+## Audit
+
+Governance grant/revoke memakai administrative audit beta.2:
+
+```text
+GOVERNANCE_GRANT_REQUEST
+GOVERNANCE_GRANT_SUCCESS
+GOVERNANCE_GRANT_FAILED
+GOVERNANCE_REVOKE_REQUEST
+GOVERNANCE_REVOKE_SUCCESS
+GOVERNANCE_REVOKE_FAILED
+```
+
+Jika Discord administrative audit aktif, event governance juga dikirim async melalui sink yang sama.
 
 ## Integrasi
 
-- Paper 1.21.11 / Java 21.
-- Citizens.
-- Vault + economy provider.
-- Discord webhook opsional untuk transaction audit dan administrative audit.
-- LuckPerms dapat digunakan untuk permission admin/staff.
-
-## Storage
-
-- `shops.yml` — definisi shop schema v2.
-- `shops.yml.schema-v1.bak` — backup migration legacy.
-- `shops.yml.schema.pending` / `.last` — migration crash-recovery evidence.
-- `shops.yml.admin.bak` — snapshot sebelum admin mutation.
-- `shops.yml.admin.pending` / `.last` — administrative mutation crash-recovery evidence.
-- `logs/admin-recovery.log` — riwayat recovery mutation admin.
-- `stock.yml` — mutable runtime stock.
-- `logs/audit.log` — transaction audit.
-- `logs/admin-audit.log` — administrative audit.
-- `safety.lock` — persistent economy circuit breaker.
-- `pending-transactions/` — transaction crash-window recovery evidence.
+- Paper 1.21.11 / Java 21
+- Citizens
+- Vault + economy provider
+- LuckPerms opsional untuk permission override
+- Discord webhook opsional
 
 ## Dokumentasi
 
-- [`ROADMAP.md`](ROADMAP.md) — tahapan development.
-- [`CHANGELOG.md`](CHANGELOG.md) — riwayat perubahan.
-- [`docs/BETA1_FINAL.md`](docs/BETA1_FINAL.md) — frozen core baseline beta.1.
-- [`docs/BETA2_FINAL.md`](docs/BETA2_FINAL.md) — frozen Shop Management baseline beta.2.
-- [`docs/BETA2_ADMIN_COMMANDS.md`](docs/BETA2_ADMIN_COMMANDS.md) — command dan permission beta.2.
-- [`docs/BETA2_TEST_PLAN.md`](docs/BETA2_TEST_PLAN.md) — QA beta.2.
-- [`docs/BETA2_RC3.md`](docs/BETA2_RC3.md) — recovery hardening RC3.
-- [`docs/ECONOMY_DESIGN.md`](docs/ECONOMY_DESIGN.md) — konsep ekonomi.
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — arsitektur core.
+- [`ROADMAP.md`](ROADMAP.md)
+- [`docs/BETA1_FINAL.md`](docs/BETA1_FINAL.md)
+- [`docs/BETA2_FINAL.md`](docs/BETA2_FINAL.md)
+- [`docs/BETA3_RC1.md`](docs/BETA3_RC1.md)
+- [`docs/BETA3_TEST_PLAN.md`](docs/BETA3_TEST_PLAN.md)
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- [`docs/ECONOMY_DESIGN.md`](docs/ECONOMY_DESIGN.md)
 
-## Development Berikutnya
+## Next beta.3 Update
 
-`0.1.0-beta.2` sekarang menjadi baseline stabil untuk Shop Management. Fitur baru berikutnya masuk ke **beta.3 — Economy Staff & Governance**; bug beta.2 diperbaiki sebagai patch tanpa mencampurkan fitur governance baru.
+Setelah RC1 role/scope regression aman, update berikutnya adalah **sensitive-change approval workflow**: request/approve/reject, threshold perubahan besar, expiry, anti-self-approval, dan durable approval evidence.
 
-Plugin ini dikembangkan oleh **MenkiPlugcore** untuk project **Vephilim Roleplay**.
+Plugin dikembangkan oleh **MenkiPlugcore** untuk **Vephilim Roleplay**.
