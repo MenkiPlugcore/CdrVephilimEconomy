@@ -27,6 +27,6 @@ jobs:
       - name: Upload plugin jar
         uses: actions/upload-artifact@v4
         with:
-          name: CdrVephilimEconomy-beta.3-FINAL
+          name: CdrVephilimEconomy-beta.4-RC1
           path: target/CdrVephilimEconomy-*.jar
           if-no-files-found: error
