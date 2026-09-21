@@ -2,6 +2,8 @@ package id.cdr.vephilimeconomy.governance;
 
 import id.cdr.vephilimeconomy.CdrVephilimEconomy;
 import id.cdr.vephilimeconomy.admin.AdminAuditService;
+import id.cdr.vephilimeconomy.market.MarketEventLifecycleService;
+import id.cdr.vephilimeconomy.market.MarketSupplyCommandListener;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.ConfigurationSection;
@@ -40,7 +42,6 @@ public final class GovernanceService {
     private final File backupFile;
     private final File tempFile;
     private final Map<UUID, Assignment> assignments = new LinkedHashMap<>();
-    private final GovernanceQuotaLedger quotaLedger;
 
     private boolean healthy;
     private String healthDetail = "not loaded";
@@ -51,9 +52,15 @@ public final class GovernanceService {
         this.file = new File(plugin.getDataFolder(), "governance.yml");
         this.backupFile = new File(plugin.getDataFolder(), "governance.yml.bak");
         this.tempFile = new File(plugin.getDataFolder(), "governance.yml.tmp");
-        this.quotaLedger = new GovernanceQuotaLedger(plugin, audit);
+
+        // beta.5 RC3: GovernanceService no longer registers its own quota command
+        // listener. CveCommand owns the single GovernanceQuotaCommandListener and
+        // its single quota ledger, preventing every governed mutation from being
+        // reserved twice. Market beta.5 listeners are bootstrapped here once,
+        // because this service itself is created once during plugin enable.
         plugin.getServer().getPluginManager().registerEvents(
-                new GovernanceQuotaCommandListener(plugin, this, quotaLedger), plugin);
+                new MarketSupplyCommandListener(plugin, audit), plugin);
+        new MarketEventLifecycleService(plugin, audit).start();
     }
 
     public synchronized Result load() {
@@ -65,14 +72,7 @@ public final class GovernanceService {
             assignments.clear();
             assignments.putAll(loaded);
             healthy = true;
-
-            GovernanceQuotaLedger.Result quotaLoad = quotaLedger.load();
-            healthDetail = "schema=v" + SCHEMA + ", members=" + assignments.size()
-                    + ", quota=" + (quotaLoad.success() ? "OK" : "FAIL-CLOSED");
-            if (!quotaLoad.success()) {
-                plugin.getLogger().severe("Governance assignment tetap loaded, tetapi direct role mutation quota fail-closed: "
-                        + quotaLoad.message());
-            }
+            healthDetail = "schema=v" + SCHEMA + ", members=" + assignments.size();
             return Result.ok("Governance loaded: " + healthDetail + ".");
         } catch (IOException exception) {
             healthy = false;
@@ -296,8 +296,7 @@ public final class GovernanceService {
     }
 
     public synchronized String statusSummary() {
-        return "healthy=" + healthy + ", " + healthDetail + ", members=" + assignments.size()
-                + ", quota={" + quotaLedger.statusSummary() + "}";
+        return "healthy=" + healthy + ", " + healthDetail + ", members=" + assignments.size();
     }
 
     public synchronized String describe(String playerName) {
@@ -308,8 +307,7 @@ public final class GovernanceService {
         Assignment assignment = optional.get();
         return assignment.lastKnownName() + " role=" + assignment.role()
                 + ", scopes=" + String.join(",", assignment.scopes())
-                + ", capabilities=" + assignment.role().capabilities()
-                + ", " + quotaLedger.describe(assignment.uuid(), assignment.role());
+                + ", capabilities=" + assignment.role().capabilities();
     }
 
     private Assignment assignment(CommandSender sender) {
