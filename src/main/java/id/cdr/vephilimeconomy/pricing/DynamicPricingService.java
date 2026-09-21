@@ -1,5 +1,6 @@
 package id.cdr.vephilimeconomy.pricing;
 
+import id.cdr.vephilimeconomy.market.MarketEventService;
 import id.cdr.vephilimeconomy.shop.Shop;
 import id.cdr.vephilimeconomy.shop.ShopListing;
 import id.cdr.vephilimeconomy.shop.ShopRegistry;
@@ -13,6 +14,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -24,11 +26,10 @@ import java.util.regex.Pattern;
 /**
  * Controlled dynamic-pricing quote engine.
  *
- * <p>RC2 keeps market multipliers durable in market-state.yml and only
+ * <p>beta.4 keeps market multipliers durable in market-state.yml and only
  * resamples after a configured cooldown plus meaningful stock movement.
- * Base prices remain owned by shops.yml. A broken market-state file blocks
- * dynamic pricing and falls back to static base prices instead of silently
- * creating a new market state.</p>
+ * beta.5 RC1 layers temporary RP market-event multipliers after the sampled
+ * dynamic price. Base prices remain owned by shops.yml.</p>
  */
 public final class DynamicPricingService {
     public static final int SCHEMA_VERSION = 1;
@@ -41,6 +42,7 @@ public final class DynamicPricingService {
     private final Map<String, DirectionStamp> recentDirections = new ConcurrentHashMap<>();
 
     private MarketStateRepository marketState;
+    private MarketEventService marketEvents;
     private boolean globalEnabled;
     private int configurationWarnings;
     private long quoteCooldownMillis = 30_000L;
@@ -74,11 +76,15 @@ public final class DynamicPricingService {
         marketState = new MarketStateRepository(file.getParentFile(), logger);
         marketState.load();
 
+        marketEvents = new MarketEventService(file.getParentFile(), logger);
+        marketEvents.load();
+
         globalEnabled = yaml.getBoolean("enabled", false);
         ConfigurationSection shops = yaml.getConfigurationSection("shops");
         if (shops == null) {
             logger.info("pricing.yml tidak memiliki policy listing; dynamic pricing "
-                    + (globalEnabled ? "ON tetapi tidak ada listing aktif." : "OFF."));
+                    + (globalEnabled ? "ON tetapi tidak ada listing aktif." : "OFF.")
+                    + " RP market events tetap dapat memodifikasi static base price.");
             return;
         }
 
@@ -116,7 +122,8 @@ public final class DynamicPricingService {
                 + ", quoteCooldown=" + quoteCooldownMillis + "ms"
                 + ", minStockDelta=" + minStockChangeToResample
                 + ", reversalCooldown=" + reversalCooldownMillis + "ms"
-                + ", marketState=" + marketState.shortStatus() + ".");
+                + ", marketState=" + marketState.shortStatus()
+                + ", marketEvents=" + marketEvents.statusSummary() + ".");
     }
 
     public PriceQuote quote(Shop shop, ShopListing listing, int currentStock, TransactionType type) {
@@ -126,45 +133,69 @@ public final class DynamicPricingService {
                 ? 0.0D
                 : clamp((double) currentStock / (double) listing.maxStock(), 0.0D, 1.0D);
 
+        PriceQuote quote;
         if (!globalEnabled || policy == null || !policy.enabled()
                 || listing.maxStock() <= 0 || basePrice <= 0.0D
                 || marketState == null || !marketState.healthy()) {
-            return PriceQuote.staticPrice(basePrice, currentRatio);
+            quote = PriceQuote.staticPrice(basePrice, currentRatio);
+        } else {
+            double desiredPressure = pressureFor(currentRatio, policy);
+            double desiredRawMultiplier = 1.0D + (policy.sensitivity() * desiredPressure);
+            double desiredMultiplier = clamp(desiredRawMultiplier, policy.minMultiplier(), policy.maxMultiplier());
+
+            MarketStateRepository.Resolution resolution = marketState.resolve(
+                    shop.id(),
+                    listing.id(),
+                    currentStock,
+                    desiredMultiplier,
+                    policyFingerprint(policy, listing),
+                    System.currentTimeMillis(),
+                    quoteCooldownMillis,
+                    minStockChangeToResample
+            );
+            if (!resolution.healthy()) {
+                quote = PriceQuote.staticPrice(basePrice, currentRatio);
+            } else {
+                double multiplier = clamp(resolution.multiplier(), policy.minMultiplier(), policy.maxMultiplier());
+                double sampledRatio = clamp((double) resolution.sampledStock() / (double) listing.maxStock(), 0.0D, 1.0D);
+                double sampledPressure = pressureFor(sampledRatio, policy);
+                double effective = roundCurrency(basePrice * multiplier);
+                if (basePrice > 0.0D && effective <= 0.0D) {
+                    effective = 0.01D;
+                }
+                quote = new PriceQuote(basePrice, effective, multiplier, sampledRatio,
+                        sampledPressure, true);
+            }
         }
 
-        double desiredPressure = pressureFor(currentRatio, policy);
-        double desiredRawMultiplier = 1.0D + (policy.sensitivity() * desiredPressure);
-        double desiredMultiplier = clamp(desiredRawMultiplier, policy.minMultiplier(), policy.maxMultiplier());
-
-        MarketStateRepository.Resolution resolution = marketState.resolve(
-                shop.id(),
-                listing.id(),
-                currentStock,
-                desiredMultiplier,
-                policyFingerprint(policy, listing),
-                System.currentTimeMillis(),
-                quoteCooldownMillis,
-                minStockChangeToResample
-        );
-        if (!resolution.healthy()) {
-            return PriceQuote.staticPrice(basePrice, currentRatio);
+        if (marketEvents == null || basePrice <= 0.0D) {
+            return quote;
         }
 
-        double multiplier = clamp(resolution.multiplier(), policy.minMultiplier(), policy.maxMultiplier());
-        double sampledRatio = clamp((double) resolution.sampledStock() / (double) listing.maxStock(), 0.0D, 1.0D);
-        double sampledPressure = pressureFor(sampledRatio, policy);
-        double effective = roundCurrency(basePrice * multiplier);
+        MarketEventService.Modifier eventModifier = marketEvents.modifierFor(
+                shop.id(), listing.id(), type, Instant.now());
+        if (eventModifier.activeEvents() <= 0 || Math.abs(eventModifier.multiplier() - 1.0D) <= EPSILON) {
+            return quote;
+        }
+
+        double effective = roundCurrency(quote.effectivePrice() * eventModifier.multiplier());
         if (basePrice > 0.0D && effective <= 0.0D) {
             effective = 0.01D;
         }
-
-        return new PriceQuote(basePrice, effective, multiplier, sampledRatio,
-                sampledPressure, true);
+        return new PriceQuote(
+                basePrice,
+                effective,
+                quote.multiplier() * eventModifier.multiplier(),
+                quote.stockRatio(),
+                quote.pressure(),
+                true
+        );
     }
 
     /**
      * Blocks a fast BUY -> SELL or SELL -> BUY reversal by the same player on
-     * the same dynamic listing. Same-direction demand is not blocked here.
+     * the same beta.4 dynamic listing. Event-only static listings are not put
+     * under churn guard because their multiplier is time-governed, not stock-driven.
      */
     public ChurnDecision checkChurn(UUID playerId, Shop shop, ShopListing listing,
                                     TransactionType requestedType) {
@@ -252,7 +283,9 @@ public final class DynamicPricingService {
                 + "(" + enabledPolicyCount() + "/" + policies.size() + " policies"
                 + ", state=" + (marketState == null ? "UNAVAILABLE" : marketState.shortStatus())
                 + ", sample=" + (quoteCooldownMillis / 1000L) + "s"
-                + ", reverse=" + (reversalCooldownMillis / 1000L) + "s)";
+                + ", reverse=" + (reversalCooldownMillis / 1000L) + "s"
+                + ", events=" + (marketEvents == null ? "UNAVAILABLE" : marketEvents.statusSummary())
+                + ")";
     }
 
     public boolean marketStateHealthy() {
@@ -261,6 +294,10 @@ public final class DynamicPricingService {
 
     public int marketSampleCount() {
         return marketState == null ? 0 : marketState.sampleCount();
+    }
+
+    public String marketEventStatus() {
+        return marketEvents == null ? "UNAVAILABLE" : marketEvents.statusSummary();
     }
 
     private void readStabilitySettings(ConfigurationSection yaml) {
