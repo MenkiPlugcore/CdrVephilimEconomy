@@ -1,12 +1,11 @@
 package id.cdr.vephilimeconomy.license;
 
-import org.bukkit.plugin.java.JavaPlugin;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.logging.Logger;
 
 /**
  * Lightweight anti-tamper guard for the embedded MENKIESTES license notice.
@@ -24,11 +23,11 @@ public final class LicenseIntegrityGuard {
     private LicenseIntegrityGuard() {
     }
 
-    public static boolean verify(JavaPlugin plugin) {
-        try (InputStream input = plugin.getResource(RESOURCE)) {
+    public static boolean verify(Logger logger) {
+        try (InputStream input = LicenseIntegrityGuard.class.getClassLoader().getResourceAsStream(RESOURCE)) {
             if (input == null) {
-                plugin.getLogger().severe("MENKIESTES license integrity check FAILED: embedded license resource is missing.");
-                plugin.getLogger().severe("Plugin will not start because the protected license notice was removed or the JAR is incomplete.");
+                logger.severe("MENKIESTES license integrity check FAILED: embedded license resource is missing.");
+                logger.severe("Plugin will not start because the protected license notice was removed or the JAR is incomplete.");
                 return false;
             }
 
@@ -43,16 +42,16 @@ public final class LicenseIntegrityGuard {
 
             String actual = HexFormat.of().formatHex(digest.digest());
             if (!EXPECTED_SHA256.equalsIgnoreCase(actual)) {
-                plugin.getLogger().severe("MENKIESTES license integrity check FAILED: embedded license fingerprint mismatch.");
-                plugin.getLogger().severe("Expected=" + EXPECTED_SHA256 + ", actual=" + actual + ".");
-                plugin.getLogger().severe("Plugin will not start because the embedded license notice was modified.");
+                logger.severe("MENKIESTES license integrity check FAILED: embedded license fingerprint mismatch.");
+                logger.severe("Expected=" + EXPECTED_SHA256 + ", actual=" + actual + ".");
+                logger.severe("Plugin will not start because the embedded license notice was modified.");
                 return false;
             }
 
-            plugin.getLogger().info("MENKIESTES SOFTWARE LICENSE v1.0 integrity verified. Copyright (c) 2026 CADERA.");
+            logger.info("MENKIESTES SOFTWARE LICENSE v1.0 integrity verified. Copyright (c) 2026 CADERA.");
             return true;
         } catch (IOException | NoSuchAlgorithmException exception) {
-            plugin.getLogger().severe("MENKIESTES license integrity check FAILED: " + exception.getMessage());
+            logger.severe("MENKIESTES license integrity check FAILED: " + exception.getMessage());
             return false;
         }
     }
