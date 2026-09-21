@@ -27,11 +27,11 @@ import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
 /**
- * beta.5 durable RP market-event engine.
+ * Durable RP market-event engine.
  *
- * Events are temporary price modifiers layered after beta.4's bounded dynamic
- * price. RC2 additionally wires the governed one-shot supply command runtime,
- * while supply stock mutation itself remains isolated in MarketSupplyService.
+ * RC1 introduced temporary quote modifiers. RC3 adds durable natural-expiry
+ * lifecycle evidence. Economic expiry is always controlled by ends-at; lifecycle
+ * processing only records/broadcasts the transition and never extends an event.
  */
 public final class MarketEventService {
     public static final int SCHEMA_VERSION = 1;
@@ -62,11 +62,9 @@ public final class MarketEventService {
         this.adminAudit = null;
     }
 
-    /** Administrative instance used by the /cve market command listener. */
+    /** Administrative instance used by market command/lifecycle services. */
     public MarketEventService(CdrVephilimEconomy plugin, AdminAuditService adminAudit) {
         this(plugin.getDataFolder(), plugin.getLogger(), plugin, adminAudit);
-        plugin.getServer().getPluginManager().registerEvents(
-                new MarketSupplyCommandListener(plugin, adminAudit), plugin);
     }
 
     private MarketEventService(File dataFolder, Logger logger,
@@ -82,26 +80,23 @@ public final class MarketEventService {
 
     public synchronized void load() throws IOException {
         ensureDefaultFile();
-        events.clear();
-        healthy = true;
-        healthDetail = "OK";
-
+        Map<String, MarketEvent> loaded = new LinkedHashMap<>();
         YamlConfiguration yaml = loadStrict(file);
         validateYaml(yaml);
         ConfigurationSection section = yaml.getConfigurationSection("events");
-        if (section == null) {
-            return;
+        if (section != null) {
+            for (String rawId : section.getKeys(false)) {
+                String id = normalizeId(rawId, false);
+                ConfigurationSection eventSection = section.getConfigurationSection(rawId);
+                if (eventSection == null) continue;
+                loaded.put(id, parseEvent(id, eventSection));
+            }
         }
 
-        for (String rawId : section.getKeys(false)) {
-            String id = normalizeId(rawId, false);
-            ConfigurationSection eventSection = section.getConfigurationSection(rawId);
-            if (eventSection == null) {
-                continue;
-            }
-            MarketEvent event = parseEvent(id, eventSection);
-            events.put(id, event);
-        }
+        events.clear();
+        events.putAll(loaded);
+        healthy = true;
+        healthDetail = "OK";
     }
 
     public synchronized Modifier modifierFor(String rawShopId, String rawListingId,
@@ -147,12 +142,16 @@ public final class MarketEventService {
     public synchronized String statusSummary() {
         Instant now = Instant.now();
         long active = events.values().stream().filter(event -> event.activeAt(now)).count();
-        long expired = events.values().stream().filter(event -> event.enabled() && !event.endsAt().isAfter(now)).count();
+        long expired = events.values().stream().filter(event -> event.naturallyExpiredAt(now)).count();
+        long pendingLifecycle = events.values().stream()
+                .filter(event -> event.naturallyExpiredAt(now) && event.expiryRecordedAt() == null)
+                .count();
         return (healthy ? "OK" : "BLOCKED")
                 + "(schema=v" + SCHEMA_VERSION
                 + ", events=" + events.size()
                 + ", active=" + active
                 + ", expired=" + expired
+                + ", expiryPending=" + pendingLifecycle
                 + ", detail=" + compact(healthDetail) + ")";
     }
 
@@ -163,8 +162,14 @@ public final class MarketEventService {
         Instant now = Instant.now();
         List<String> lines = new ArrayList<>();
         for (MarketEvent event : events.values()) {
-            String state = event.activeAt(now) ? "§aACTIVE"
-                    : event.enabled() && !event.startsAt().isAfter(now) ? "§7EXPIRED" : "§eINACTIVE";
+            String state;
+            if (event.activeAt(now)) {
+                state = "§aACTIVE";
+            } else if (event.naturallyExpiredAt(now)) {
+                state = event.expiryRecordedAt() == null ? "§eEXPIRED-PENDING" : "§7EXPIRED";
+            } else {
+                state = "§7INACTIVE";
+            }
             lines.add("§f" + event.id() + " §7| " + state
                     + " §7| " + event.type()
                     + " §7| scope=§f" + event.shopId() + "/" + event.listingId()
@@ -181,14 +186,17 @@ public final class MarketEventService {
             return List.of("§c[CVE Market] Event tidak ditemukan: " + rawId);
         }
         Instant now = Instant.now();
+        String state = event.activeAt(now) ? "ACTIVE"
+                : event.naturallyExpiredAt(now) ? "EXPIRED" : "INACTIVE";
         return List.of(
                 "§6[CVE Market] §f" + event.id() + " §7- " + event.type(),
-                "§7state=§f" + (event.activeAt(now) ? "ACTIVE" : "INACTIVE")
+                "§7state=§f" + state
                         + " §7enabled=§f" + event.enabled()
                         + " §7scope=§f" + event.shopId() + "/" + event.listingId(),
                 "§7buyMultiplier=§f" + event.buyMultiplier()
                         + " §7sellMultiplier=§f" + event.sellMultiplier(),
                 "§7startsAt=§f" + event.startsAt() + " §7endsAt=§f" + event.endsAt(),
+                "§7expiryRecordedAt=§f" + (event.expiryRecordedAt() == null ? "-" : event.expiryRecordedAt()),
                 "§7createdBy=§f" + event.createdBy()
                         + " §7announcement=§f" + (event.announcement().isBlank() ? "-" : event.announcement())
         );
@@ -248,7 +256,7 @@ public final class MarketEventService {
         Instant end = start.plus(Duration.ofMinutes(durationMinutes));
         String cleanAnnouncement = sanitizeMessage(announcement);
         MarketEvent event = new MarketEvent(id, type, true, shopId, listingId,
-                buy, sell, start, end, sanitize(actor), cleanAnnouncement);
+                buy, sell, start, end, sanitize(actor), cleanAnnouncement, null);
         return persistMutation(actor, "MARKET_EVENT_CREATE", eventSummary(event), yaml -> writeEvent(yaml, event),
                 cleanAnnouncement.isBlank() ? "Event pasar " + id + " dimulai." : cleanAnnouncement);
     }
@@ -276,6 +284,70 @@ public final class MarketEventService {
             yaml.set(path + ".ended-by", sanitize(actor));
             yaml.set(path + ".end-reason", cleanReason);
         }, "Event pasar " + id + " telah berakhir" + (cleanReason.isBlank() ? "." : ": " + cleanReason));
+    }
+
+    /**
+     * Records all natural expiries that crossed ends-at and do not yet have
+     * durable lifecycle evidence. Evidence is persisted before history/audit/chat
+     * side effects. This intentionally gives at-most-once RP broadcasts: a crash
+     * after evidence commit may miss a broadcast, but cannot duplicate expiry
+     * announcements after restart.
+     */
+    public synchronized LifecycleResult processExpiredLifecycle() throws IOException {
+        if (plugin == null) return new LifecycleResult(0, 0);
+        Instant now = Instant.now();
+        List<MarketEvent> due = events.values().stream()
+                .filter(event -> event.naturallyExpiredAt(now) && event.expiryRecordedAt() == null)
+                .toList();
+        if (due.isEmpty()) return new LifecycleResult(0, 0);
+
+        YamlConfiguration yaml = loadStrict(file);
+        validateYaml(yaml);
+        for (MarketEvent event : due) {
+            String path = "events." + event.id();
+            yaml.set(path + ".expiry-recorded-at", now.toString());
+            yaml.set(path + ".expiry-recorded-by", "SYSTEM");
+        }
+        yaml.set("meta.schema", SCHEMA_VERSION);
+        yaml.set("meta.updated-at", now.toString());
+        validateYaml(yaml);
+
+        try {
+            yaml.save(tempFile);
+            validateYaml(loadStrict(tempFile));
+            Files.copy(file.toPath(), backupFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            moveReplace(tempFile, file);
+        } catch (IOException exception) {
+            cleanupTemp();
+            throw exception;
+        }
+
+        load();
+        int broadcasts = 0;
+        for (MarketEvent event : due) {
+            String detail = "id=" + event.id()
+                    + "; type=" + event.type()
+                    + "; scope=" + event.shopId() + "/" + event.listingId()
+                    + "; ended-at=" + event.endsAt()
+                    + "; lifecycle-recorded-at=" + now;
+            if (adminAudit != null) {
+                try {
+                    adminAudit.record("SYSTEM", "MARKET_EVENT_EXPIRED", detail);
+                } catch (IOException exception) {
+                    logger.warning("Expiry evidence sudah durable tetapi admin audit gagal untuk "
+                            + event.id() + ": " + exception.getMessage());
+                }
+            }
+            try {
+                appendHistory("SYSTEM", "MARKET_EVENT_EXPIRED", detail);
+            } catch (IOException exception) {
+                logger.warning("Expiry evidence sudah durable tetapi market history gagal untuk "
+                        + event.id() + ": " + exception.getMessage());
+            }
+            broadcast("Event pasar " + event.id() + " telah berakhir secara otomatis.");
+            broadcasts++;
+        }
+        return new LifecycleResult(due.size(), broadcasts);
     }
 
     private Result persistMutation(String actor, String action, String detail,
@@ -389,6 +461,10 @@ public final class MarketEventService {
         yaml.set(path + ".ends-at", event.endsAt().toString());
         yaml.set(path + ".created-by", event.createdBy());
         yaml.set(path + ".announcement", event.announcement());
+        if (event.expiryRecordedAt() != null) {
+            yaml.set(path + ".expiry-recorded-at", event.expiryRecordedAt().toString());
+            yaml.set(path + ".expiry-recorded-by", "SYSTEM");
+        }
     }
 
     private static void validateYaml(YamlConfiguration yaml) throws IOException {
@@ -437,7 +513,15 @@ public final class MarketEventService {
         if (!end.isAfter(start)) throw new IOException("Event ends-at harus setelah starts-at: " + id);
         String createdBy = sanitize(section.getString("created-by", "SYSTEM"));
         String announcement = sanitizeMessage(section.getString("announcement", ""));
-        return new MarketEvent(id, type, enabled, shop, listing, buy, sell, start, end, createdBy, announcement);
+        String rawExpiry = section.getString("expiry-recorded-at", "");
+        Instant expiryRecordedAt = rawExpiry == null || rawExpiry.isBlank()
+                ? null
+                : parseInstant(rawExpiry, id, "expiry-recorded-at");
+        if (expiryRecordedAt != null && expiryRecordedAt.isBefore(end)) {
+            throw new IOException("Event " + id + " memiliki expiry-recorded-at sebelum ends-at");
+        }
+        return new MarketEvent(id, type, enabled, shop, listing, buy, sell,
+                start, end, createdBy, announcement, expiryRecordedAt);
     }
 
     private static Instant parseInstant(String raw, String id, String field) throws IOException {
@@ -539,10 +623,15 @@ public final class MarketEventService {
             Instant startsAt,
             Instant endsAt,
             String createdBy,
-            String announcement
+            String announcement,
+            Instant expiryRecordedAt
     ) {
         public boolean activeAt(Instant now) {
             return enabled && !now.isBefore(startsAt) && now.isBefore(endsAt);
+        }
+
+        public boolean naturallyExpiredAt(Instant now) {
+            return enabled && !now.isBefore(endsAt);
         }
 
         public boolean matches(String shop, String listing) {
@@ -555,6 +644,9 @@ public final class MarketEventService {
         private static Modifier identity() {
             return new Modifier(1.0D, 0, List.of());
         }
+    }
+
+    public record LifecycleResult(int recorded, int broadcasts) {
     }
 
     public record Result(boolean success, String message) {
