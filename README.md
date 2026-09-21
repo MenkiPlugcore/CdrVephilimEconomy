@@ -4,14 +4,14 @@
 
 ## Status
 
-- **Current development:** `0.1.0-beta.5-RC2`
+- **Current development:** `0.1.0-beta.5-RC3`
 - **Frozen Controlled Dynamic Pricing baseline:** `0.1.0-beta.4`
 - **Frozen Governance baseline:** `0.1.0-beta.3`
 - **Frozen Shop Management baseline:** `0.1.0-beta.2`
 - **Frozen Core Economy baseline:** `0.1.0-beta.1`
 - Branch development aktif: `dev/beta.5`
 
-beta.5 RC2 memperluas RP Market Events dari temporary price modifier menjadi governed one-shot stock shipment dengan durable recovery evidence.
+beta.5 RC3 menambahkan automatic natural-expiry lifecycle, durable expiry evidence/history hardening, dan listener deduplication setelah RC2 supply shipment.
 
 ## Core Economy
 
@@ -179,6 +179,31 @@ lainnya           -> BLOCKED / manual recovery
 
 Supply tidak melakukan silent clamp. Bila shipment melebihi `max-stock`, seluruh request ditolak.
 
+### RC3 Automatic Expiry Lifecycle
+
+Price event sekarang memiliki lifecycle recorder otomatis. Effect harga tetap berhenti persis saat `ends-at`; scheduler hanya merekam bahwa natural expiry sudah diproses.
+
+Durable metadata baru di `market-events.yml`:
+
+```text
+expiry-recorded-at: <timestamp>
+expiry-recorded-by: SYSTEM
+```
+
+Setelah evidence tersimpan, plugin mencoba menulis `MARKET_EVENT_EXPIRED` ke admin audit dan `logs/market-events.log`, lalu broadcast automatic expiry.
+
+Urutan sengaja:
+
+```text
+persist expiry evidence
+ -> audit/history
+ -> broadcast
+```
+
+sehingga restart/crash tidak menyebabkan duplicate expiry announcement. Broadcast memakai contract at-most-once; crash tepat setelah evidence commit dapat membuat chat notification terlewat, tetapi economic state dan durable lifecycle evidence tetap benar.
+
+RC3 juga merapikan runtime listener menjadi satu quota command listener dan satu supply command listener per plugin enable. Ini menghilangkan risiko double quota reservation/cooldown dari duplicate governance listener.
+
 ### Governance
 
 Permission:
@@ -201,6 +226,8 @@ Manual ambiguous supply recovery hanya untuk admin/operator `market.manage`.
 ### Safety
 
 Price event tidak langsung memutasi saldo, item, atau stock. Supply event memang memutasi stock, tetapi hanya melalui `ShopAdminService`, setelah PREPARED recovery evidence dipersist. Economy safety stop, max-stock, stock repository persistence, dan admin audit tetap berlaku.
+
+Natural expiry tidak melakukan `reloadRuntime()` dan tidak menentukan quote validity; quote event sudah otomatis invalid setelah `ends-at`.
 
 ## Persistence Penting
 
@@ -241,11 +268,13 @@ governance-dual-approval.yml
 - [`docs/BETA5_RC1_TEST_PLAN.md`](docs/BETA5_RC1_TEST_PLAN.md)
 - [`docs/BETA5_RC2.md`](docs/BETA5_RC2.md)
 - [`docs/BETA5_RC2_TEST_PLAN.md`](docs/BETA5_RC2_TEST_PLAN.md)
+- [`docs/BETA5_RC3.md`](docs/BETA5_RC3.md)
+- [`docs/BETA5_RC3_TEST_PLAN.md`](docs/BETA5_RC3_TEST_PLAN.md)
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - [`docs/ECONOMY_DESIGN.md`](docs/ECONOMY_DESIGN.md)
 
 ## Next beta.5 Update
 
-Setelah RC2 lolos runtime QA, fase berikutnya adalah **automatic expiry lifecycle notification + market history hardening**, lalu optional event templates sebelum final regression beta.5.
+Setelah RC3 runtime QA, tinggal keputusan apakah optional event template/preset memang perlu. Jika tidak ada kebutuhan nyata, langsung final regression/security hardening menuju `0.1.0-beta.5 FINAL`.
 
 Plugin dikembangkan oleh **MenkiPlugcore** untuk **Vephilim Roleplay**.
