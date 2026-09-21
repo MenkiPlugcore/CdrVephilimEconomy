@@ -10,7 +10,7 @@
 - **Frozen Shop Management baseline:** `0.1.0-beta.2`
 - **Frozen Core Economy baseline:** `0.1.0-beta.1`
 - beta.5 sudah dipromosikan ke `main`.
-- Catalog preparation branch: `prep/v1.0.0-catalog`.
+- Active pre-production catalog branch: `dev/v1.0.0-prep`.
 
 beta.5 FINAL membekukan temporary RP price events, governed one-shot supply shipment, automatic natural-expiry lifecycle, durable recovery evidence, dan final runtime bootstrap hardening.
 
