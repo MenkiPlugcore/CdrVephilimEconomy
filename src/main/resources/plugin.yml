@@ -1,5 +1,5 @@
 name: CdrVephilimEconomy
-version: '0.1.0-beta.4'
+version: '0.1.0-beta.5-RC1'
 main: id.cdr.vephilimeconomy.CdrVephilimEconomy
 api-version: '1.21.11'
 authors: [MenkiPlugcore]
@@ -9,8 +9,8 @@ depend: [Citizens, Vault]
 
 commands:
   cve:
-    description: Administrative, market pricing, and economy governance command for CdrVephilimEconomy.
-    usage: /cve <reload|status|doctor|safety|shop|governance|pricing>
+    description: Administrative, market pricing, RP market events, and economy governance command for CdrVephilimEconomy.
+    usage: /cve <reload|status|doctor|safety|shop|governance|pricing|market>
     aliases: [veconomy]
 
 permissions:
@@ -33,6 +33,8 @@ permissions:
       cdrvephilimeconomy.governance.admin: true
       cdrvephilimeconomy.pricing.view: true
       cdrvephilimeconomy.pricing.manage: true
+      cdrvephilimeconomy.market.view: true
+      cdrvephilimeconomy.market.manage: true
 
   cdrvephilimeconomy.shop.view:
     description: View shop list, details, schema, and validation status.
@@ -80,4 +82,11 @@ permissions:
     default: false
   cdrvephilimeconomy.pricing.manage:
     description: Manage dynamic pricing policy without role guardrails.
+    default: false
+
+  cdrvephilimeconomy.market.view:
+    description: View RP market events globally regardless of governance shop scope.
+    default: false
+  cdrvephilimeconomy.market.manage:
+    description: Create and end RP market events without Royal Treasurer scope restrictions.
     default: false
