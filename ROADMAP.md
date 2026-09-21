@@ -139,14 +139,18 @@ Target: kondisi ekonomi menjadi pemantik roleplay.
 - [x] Fail-closed ambiguous supply recovery + explicit CONFIRM recovery command.
 - [x] Supply max-stock guard tanpa silent clamp.
 - [x] Supply RP broadcast + `logs/market-supply.log` history.
-- [ ] Automatic expiry lifecycle notification + history hardening untuk price event.
+- [x] Automatic natural-expiry lifecycle recorder untuk price event.
+- [x] Durable `expiry-recorded-at` / `expiry-recorded-by` evidence di `market-events.yml`.
+- [x] Automatic expiry audit/history + RP broadcast dengan at-most-once restart contract.
+- [x] Governance quota listener deduplication.
+- [x] Supply listener registration deduplication / single bootstrap.
 - [ ] Optional event templates/presets dari config.
 - [ ] Final beta.5 regression/security hardening.
 - [ ] Finalisasi `0.1.0-beta.5`.
 
-**Status implementasi:** `0.1.0-beta.5-RC2` pada branch `dev/beta.5` — temporary RP price events + governed durable supply shipment/recovery.
+**Status implementasi:** `0.1.0-beta.5-RC3` pada branch `dev/beta.5` — RP price events + governed durable supply + automatic expiry lifecycle/history hardening.
 
-Dokumentasi: [`docs/BETA5_RC1.md`](docs/BETA5_RC1.md), [`docs/BETA5_RC1_TEST_PLAN.md`](docs/BETA5_RC1_TEST_PLAN.md), [`docs/BETA5_RC2.md`](docs/BETA5_RC2.md), dan [`docs/BETA5_RC2_TEST_PLAN.md`](docs/BETA5_RC2_TEST_PLAN.md).
+Dokumentasi: [`docs/BETA5_RC1.md`](docs/BETA5_RC1.md), [`docs/BETA5_RC1_TEST_PLAN.md`](docs/BETA5_RC1_TEST_PLAN.md), [`docs/BETA5_RC2.md`](docs/BETA5_RC2.md), [`docs/BETA5_RC2_TEST_PLAN.md`](docs/BETA5_RC2_TEST_PLAN.md), [`docs/BETA5_RC3.md`](docs/BETA5_RC3.md), dan [`docs/BETA5_RC3_TEST_PLAN.md`](docs/BETA5_RC3_TEST_PLAN.md).
 
 ## v1.0.0 — Production
 
