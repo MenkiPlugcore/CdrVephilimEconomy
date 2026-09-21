@@ -1,5 +1,7 @@
 package id.cdr.vephilimeconomy.admin;
 
+import id.cdr.vephilimeconomy.CdrVephilimEconomy;
+import id.cdr.vephilimeconomy.market.MarketRuntimeBootstrap;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
@@ -25,6 +27,13 @@ public final class AdminAuditService {
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .build();
+
+        // beta.5 FINAL hardening: the market supply interceptor and automatic
+        // expiry lifecycle are plugin-lifetime services, not reloadable runtime
+        // listeners. Bootstrap them exactly once after the admin audit sink exists.
+        if (plugin instanceof CdrVephilimEconomy economyPlugin) {
+            MarketRuntimeBootstrap.start(economyPlugin, this);
+        }
     }
 
     public synchronized void record(String actor, String action, String detail) throws IOException {

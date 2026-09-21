@@ -2,6 +2,7 @@ package id.cdr.vephilimeconomy.governance;
 
 import id.cdr.vephilimeconomy.CdrVephilimEconomy;
 import id.cdr.vephilimeconomy.admin.ShopAdminService;
+import id.cdr.vephilimeconomy.market.MarketEventService;
 import id.cdr.vephilimeconomy.pricing.MarketStatisticsService;
 import id.cdr.vephilimeconomy.pricing.PricingAdminService;
 import id.cdr.vephilimeconomy.shop.Shop;
@@ -26,9 +27,8 @@ import java.util.Optional;
  * beta.3 responsibilities: rolling quota/cooldown reservation for direct
  * role-only price/stock mutations.
  *
- * beta.4 RC3 additionally owns /cve pricing because this listener is already
- * wired into the command path. Pricing mutations are scope/hierarchy gated,
- * audited, candidate-validated and applied through safe runtime reload.
+ * beta.4 adds governed /cve pricing commands. beta.5 RC1 adds governed
+ * temporary RP market events without exposing full admin access to economy staff.
  */
 public final class GovernanceQuotaCommandListener implements Listener {
     private static final String ADMIN = "cdrvephilimeconomy.admin";
@@ -36,12 +36,15 @@ public final class GovernanceQuotaCommandListener implements Listener {
     private static final String STOCK = "cdrvephilimeconomy.shop.stock";
     private static final String PRICING_VIEW = "cdrvephilimeconomy.pricing.view";
     private static final String PRICING_MANAGE = "cdrvephilimeconomy.pricing.manage";
+    private static final String MARKET_VIEW = "cdrvephilimeconomy.market.view";
+    private static final String MARKET_MANAGE = "cdrvephilimeconomy.market.manage";
 
     private final CdrVephilimEconomy plugin;
     private final GovernanceService governance;
     private final GovernanceQuotaLedger quota;
     private final PricingAdminService pricingAdmin;
     private final MarketStatisticsService marketStatistics;
+    private final MarketEventService marketEvents;
 
     public GovernanceQuotaCommandListener(CdrVephilimEconomy plugin,
                                           GovernanceService governance,
@@ -51,6 +54,12 @@ public final class GovernanceQuotaCommandListener implements Listener {
         this.quota = quota;
         this.pricingAdmin = new PricingAdminService(plugin, plugin.adminAuditService());
         this.marketStatistics = new MarketStatisticsService(plugin.getDataFolder());
+        this.marketEvents = new MarketEventService(plugin, plugin.adminAuditService());
+        try {
+            this.marketEvents.load();
+        } catch (IOException exception) {
+            plugin.getLogger().severe("Beta.5 market-event runtime tidak sehat: " + exception.getMessage());
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -61,6 +70,11 @@ public final class GovernanceQuotaCommandListener implements Listener {
         if (tokens[1].equalsIgnoreCase("pricing")) {
             event.setCancelled(true);
             handlePricing(event.getPlayer(), tokens);
+            return;
+        }
+        if (tokens[1].equalsIgnoreCase("market")) {
+            event.setCancelled(true);
+            handleMarket(event.getPlayer(), tokens);
             return;
         }
 
@@ -80,9 +94,207 @@ public final class GovernanceQuotaCommandListener implements Listener {
     public void onServerCommand(ServerCommandEvent event) {
         String command = event.getCommand() == null ? "" : event.getCommand().trim();
         String[] tokens = command.split("\\s+");
-        if (tokens.length < 2 || !isCveRoot(tokens[0]) || !tokens[1].equalsIgnoreCase("pricing")) return;
-        event.setCancelled(true);
-        handlePricing(event.getSender(), tokens);
+        if (tokens.length < 2 || !isCveRoot(tokens[0])) return;
+        if (tokens[1].equalsIgnoreCase("pricing")) {
+            event.setCancelled(true);
+            handlePricing(event.getSender(), tokens);
+        } else if (tokens[1].equalsIgnoreCase("market")) {
+            event.setCancelled(true);
+            handleMarket(event.getSender(), tokens);
+        }
+    }
+
+    private void handleMarket(CommandSender sender, String[] tokens) {
+        try {
+            marketEvents.load();
+        } catch (IOException exception) {
+            sender.sendMessage("§c[CVE Market] market-events.yml tidak valid: " + exception.getMessage());
+            return;
+        }
+
+        if (tokens.length < 3) {
+            sendMarketHelp(sender);
+            return;
+        }
+        String action = tokens[2].toLowerCase(Locale.ROOT);
+        switch (action) {
+            case "status" -> {
+                if (!canViewMarketAny(sender)) {
+                    returnMarketDenied(sender, "status");
+                    return;
+                }
+                String runtime = plugin.dynamicPricingService() == null
+                        ? "UNAVAILABLE"
+                        : plugin.dynamicPricingService().marketEventStatus();
+                sender.sendMessage("§6[CVE Market] §fruntime=" + runtime + " §7admin=" + marketEvents.statusSummary());
+            }
+            case "list" -> {
+                if (!canViewMarketAny(sender)) {
+                    returnMarketDenied(sender, "list");
+                    return;
+                }
+                boolean any = false;
+                sender.sendMessage("§6[CVE Market] §fEvents:");
+                for (MarketEventService.MarketEvent marketEvent : marketEvents.all()) {
+                    if (!canViewMarketScope(sender, marketEvent.shopId())) continue;
+                    any = true;
+                    String state = marketEvent.activeAt(java.time.Instant.now()) ? "§aACTIVE" : "§7INACTIVE";
+                    sender.sendMessage("§f- " + marketEvent.id() + " §7| " + state
+                            + " §7| " + marketEvent.type()
+                            + " §7| scope=§f" + marketEvent.shopId() + "/" + marketEvent.listingId()
+                            + " §7| buy=x§f" + marketEvent.buyMultiplier()
+                            + " §7sell=x§f" + marketEvent.sellMultiplier()
+                            + " §7| until=§f" + marketEvent.endsAt());
+                }
+                if (!any) sender.sendMessage("§7Tidak ada event yang dapat kamu lihat pada scope governance saat ini.");
+            }
+            case "show" -> {
+                if (tokens.length < 4) {
+                    sender.sendMessage("§eUsage: /cve market show <id>");
+                    return;
+                }
+                MarketEventService.MarketEvent marketEvent = marketEvents.find(tokens[3]).orElse(null);
+                if (marketEvent == null) {
+                    sender.sendMessage("§c[CVE Market] Event tidak ditemukan: " + tokens[3]);
+                    return;
+                }
+                if (!canViewMarketScope(sender, marketEvent.shopId())) {
+                    returnMarketDenied(sender, "show " + marketEvent.id());
+                    return;
+                }
+                marketEvents.showLines(tokens[3]).forEach(sender::sendMessage);
+            }
+            case "scarcity" -> createMarketPreset(sender, tokens, MarketEventService.EventType.SCARCITY);
+            case "buybonus", "kingdombuy" -> createMarketPreset(sender, tokens, MarketEventService.EventType.KINGDOM_BUY_BONUS);
+            case "discount" -> createMarketPreset(sender, tokens, MarketEventService.EventType.DISCOUNT);
+            case "end" -> {
+                if (tokens.length < 4) {
+                    sender.sendMessage("§eUsage: /cve market end <id> [reason]");
+                    return;
+                }
+                MarketEventService.MarketEvent marketEvent = marketEvents.find(tokens[3]).orElse(null);
+                if (marketEvent == null) {
+                    sender.sendMessage("§c[CVE Market] Event tidak ditemukan: " + tokens[3]);
+                    return;
+                }
+                if (!canManageMarketScope(sender, marketEvent.shopId())) {
+                    returnMarketDenied(sender, "end " + marketEvent.id());
+                    return;
+                }
+                sendMarket(sender, marketEvents.end(sender.getName(), tokens[3], joinTail(tokens, 4)));
+            }
+            default -> sendMarketHelp(sender);
+        }
+    }
+
+    private void createMarketPreset(CommandSender sender, String[] tokens, MarketEventService.EventType type) {
+        if (tokens.length < 8) {
+            sender.sendMessage("§eUsage: /cve market " + marketAction(type)
+                    + " <id> <shop|*> <listing|*> <multiplier> <minutes> [announcement]");
+            return;
+        }
+        String shopId = normalize(tokens[4]);
+        String listingId = normalize(tokens[5]);
+        if (!canManageMarketScope(sender, shopId)) {
+            returnMarketDenied(sender, "create " + shopId);
+            return;
+        }
+
+        if (!shopId.equals("*")) {
+            Shop shop = plugin.findRuntimeShop(shopId).orElse(null);
+            if (shop == null) {
+                sender.sendMessage("§c[CVE Market] Shop runtime tidak ditemukan: " + shopId);
+                return;
+            }
+            if (!listingId.equals("*") && !shop.listings().containsKey(listingId)) {
+                sender.sendMessage("§c[CVE Market] Listing runtime tidak ditemukan: " + shopId + "/" + listingId);
+                return;
+            }
+        } else if (!listingId.equals("*")) {
+            boolean listingExists = plugin.runtimeShopIds().stream()
+                    .anyMatch(id -> plugin.runtimeListingIds(id).contains(listingId));
+            if (!listingExists) {
+                sender.sendMessage("§c[CVE Market] Listing ID tidak ditemukan pada runtime shop mana pun: " + listingId);
+                return;
+            }
+        }
+
+        Double multiplier = parseDouble(tokens[6]);
+        Integer minutes = parseInt(tokens[7]);
+        if (multiplier == null || minutes == null) {
+            sender.sendMessage("§c[CVE Market] multiplier harus angka dan minutes harus integer.");
+            return;
+        }
+        MarketEventService.Result result = marketEvents.createPreset(
+                sender.getName(), tokens[3], type, shopId, listingId,
+                multiplier, minutes, joinTail(tokens, 8));
+        sendMarket(sender, result);
+    }
+
+    private static String marketAction(MarketEventService.EventType type) {
+        return switch (type) {
+            case SCARCITY -> "scarcity";
+            case KINGDOM_BUY_BONUS -> "buybonus";
+            case DISCOUNT -> "discount";
+        };
+    }
+
+    private boolean canViewMarketAny(CommandSender sender) {
+        if (!(sender instanceof Player player)) return true;
+        if (player.hasPermission(ADMIN) || player.hasPermission(MARKET_VIEW)
+                || player.hasPermission(MARKET_MANAGE)) return true;
+        return governance.assignmentFor(player.getUniqueId()).isPresent();
+    }
+
+    private boolean canViewMarketScope(CommandSender sender, String shopId) {
+        if (!(sender instanceof Player player)) return true;
+        if (player.hasPermission(ADMIN) || player.hasPermission(MARKET_VIEW)
+                || player.hasPermission(MARKET_MANAGE)) return true;
+        Optional<GovernanceService.Assignment> optional = governance.assignmentFor(player.getUniqueId());
+        if (optional.isEmpty()) return false;
+        GovernanceService.Assignment assignment = optional.get();
+        if (shopId.equals("*")) return assignment.scopes().contains("*");
+        return scopeMatches(assignment, shopId);
+    }
+
+    private boolean canManageMarketScope(CommandSender sender, String shopId) {
+        if (!(sender instanceof Player player)) return true;
+        if (player.hasPermission(ADMIN) || player.hasPermission(MARKET_MANAGE)) return true;
+        Optional<GovernanceService.Assignment> optional = governance.assignmentFor(player.getUniqueId());
+        if (optional.isEmpty() || optional.get().role() != GovernanceRole.ROYAL_TREASURER) return false;
+        GovernanceService.Assignment assignment = optional.get();
+        if (shopId.equals("*")) return assignment.scopes().contains("*");
+        return scopeMatches(assignment, shopId);
+    }
+
+    private void sendMarketHelp(CommandSender sender) {
+        sender.sendMessage("§6[CVE Market beta.5-RC1] §fCommands:");
+        sender.sendMessage("§f/cve market status");
+        sender.sendMessage("§f/cve market list");
+        sender.sendMessage("§f/cve market show <id>");
+        sender.sendMessage("§f/cve market scarcity <id> <shop|*> <listing|*> <1.0-3.0> <minutes> [announcement]");
+        sender.sendMessage("§f/cve market buybonus <id> <shop|*> <listing|*> <1.0-3.0> <minutes> [announcement]");
+        sender.sendMessage("§f/cve market discount <id> <shop|*> <listing|*> <0.25-1.0> <minutes> [announcement]");
+        sender.sendMessage("§f/cve market end <id> [reason]");
+    }
+
+    private boolean returnMarketDenied(CommandSender sender, String action) {
+        sender.sendMessage("§c[CVE Market] Akses ditolak untuk " + action + ".");
+        return false;
+    }
+
+    private static void sendMarket(CommandSender sender, MarketEventService.Result result) {
+        sender.sendMessage((result.success() ? "§a" : "§c") + "[CVE Market] " + result.message());
+    }
+
+    private static String joinTail(String[] tokens, int start) {
+        if (tokens == null || start >= tokens.length) return "";
+        StringBuilder builder = new StringBuilder();
+        for (int index = start; index < tokens.length; index++) {
+            if (!builder.isEmpty()) builder.append(' ');
+            builder.append(tokens[index]);
+        }
+        return builder.toString();
     }
 
     private void handlePricing(CommandSender sender, String[] tokens) {

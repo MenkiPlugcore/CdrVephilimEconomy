@@ -114,20 +114,44 @@ Target: harga merespons kondisi pasar tanpa menjadi liar.
 
 Dokumentasi final: [`docs/BETA4_FINAL.md`](docs/BETA4_FINAL.md).
 
-Dokumentasi development: [`docs/BETA4_RC1.md`](docs/BETA4_RC1.md), [`docs/BETA4_RC2.md`](docs/BETA4_RC2.md), [`docs/BETA4_RC3.md`](docs/BETA4_RC3.md), dan test plan RC1-RC3 pada folder `docs/`.
-
 ## beta.5 — RP Market Events
 
 Target: kondisi ekonomi menjadi pemantik roleplay.
 
-- [ ] Market modifier sementara.
-- [ ] Kelangkaan komoditas.
-- [ ] Bonus harga beli kerajaan.
-- [ ] Event supply tertentu.
-- [ ] Hook pengumuman alun-alun / broadcast RP.
-- [ ] Riwayat event ekonomi.
+- [x] Temporary market modifier layer di atas quote beta.4/static.
+- [x] Event `SCARCITY` untuk kelangkaan komoditas.
+- [x] Event `KINGDOM_BUY_BONUS` untuk bonus harga kerajaan membeli dari player.
+- [x] Event `DISCOUNT` untuk promo pembelian player dari NPC.
+- [x] Scope shop/listing dan wildcard `*` untuk price event.
+- [x] Duration-based price event dengan durable start/end timestamp.
+- [x] Hard clamp stacking event `0.25..4.0`.
+- [x] `market-events.yml` schema v1 + backup/temp atomic mutation.
+- [x] Safe runtime reload + rollback pada kegagalan apply price event.
+- [x] Hook pengumuman / broadcast RP `[Pasar Kerajaan]` pada create/end.
+- [x] Riwayat mutation price event di `logs/market-events.log` + admin audit.
+- [x] Governance view/manage permissions dan Royal Treasurer scope.
+- [x] Stale-price safety saat event mengubah quote pada GUI lama.
+- [x] Governed supply event / one-shot stock shipment.
+- [x] Supply menargetkan satu shop/listing konkret tanpa wildcard.
+- [x] Durable `market-supply.yml` PREPARED/APPLIED/COMPLETED evidence.
+- [x] Supply stock mutation melalui ShopAdminService, bukan direct stock.yml write.
+- [x] Deterministic restart recovery berdasarkan before/after durable stock snapshot.
+- [x] Fail-closed ambiguous supply recovery + explicit CONFIRM recovery command.
+- [x] Supply max-stock guard tanpa silent clamp.
+- [x] Supply RP broadcast + `logs/market-supply.log` history.
+- [x] Automatic natural-expiry lifecycle recorder untuk price event.
+- [x] Durable `expiry-recorded-at` / `expiry-recorded-by` evidence di `market-events.yml`.
+- [x] Automatic expiry audit/history + RP broadcast dengan at-most-once restart contract.
+- [x] Governance quota listener deduplication.
+- [x] Supply listener single-bootstrap guard.
+- [x] Final bootstrap hardening: supply listener dan expiry lifecycle benar-benar diregistrasikan satu kali setelah admin audit tersedia.
+- [x] Final beta.5 regression/security hardening.
+- [x] Finalisasi `0.1.0-beta.5`.
+- [ ] Optional event templates/presets dari config — deferred, bukan blocker beta.5.
 
-**Status:** fase berikutnya setelah beta.4 dipromosikan ke `main` dan branch `dev/beta.5` dibuat dari baseline tersebut.
+**Status:** `0.1.0-beta.5` **FINAL / frozen RP Market Events baseline**.
+
+Dokumentasi final: [`docs/BETA5_FINAL.md`](docs/BETA5_FINAL.md).
 
 ## v1.0.0 — Production
 
