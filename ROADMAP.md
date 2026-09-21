@@ -122,24 +122,31 @@ Target: kondisi ekonomi menjadi pemantik roleplay.
 - [x] Event `SCARCITY` untuk kelangkaan komoditas.
 - [x] Event `KINGDOM_BUY_BONUS` untuk bonus harga kerajaan membeli dari player.
 - [x] Event `DISCOUNT` untuk promo pembelian player dari NPC.
-- [x] Scope shop/listing dan wildcard `*`.
-- [x] Duration-based event dengan durable start/end timestamp.
+- [x] Scope shop/listing dan wildcard `*` untuk price event.
+- [x] Duration-based price event dengan durable start/end timestamp.
 - [x] Hard clamp stacking event `0.25..4.0`.
 - [x] `market-events.yml` schema v1 + backup/temp atomic mutation.
-- [x] Safe runtime reload + rollback pada kegagalan apply event.
+- [x] Safe runtime reload + rollback pada kegagalan apply price event.
 - [x] Hook pengumuman / broadcast RP `[Pasar Kerajaan]` pada create/end.
-- [x] Riwayat mutation event di `logs/market-events.log` + admin audit.
+- [x] Riwayat mutation price event di `logs/market-events.log` + admin audit.
 - [x] Governance view/manage permissions dan Royal Treasurer scope.
 - [x] Stale-price safety saat event mengubah quote pada GUI lama.
-- [ ] Governed supply event / stock shipment dengan durable recovery evidence.
-- [ ] Automatic expiry lifecycle notification + history hardening.
+- [x] Governed supply event / one-shot stock shipment.
+- [x] Supply menargetkan satu shop/listing konkret tanpa wildcard.
+- [x] Durable `market-supply.yml` PREPARED/APPLIED/COMPLETED evidence.
+- [x] Supply stock mutation melalui ShopAdminService, bukan direct stock.yml write.
+- [x] Deterministic restart recovery berdasarkan before/after durable stock snapshot.
+- [x] Fail-closed ambiguous supply recovery + explicit CONFIRM recovery command.
+- [x] Supply max-stock guard tanpa silent clamp.
+- [x] Supply RP broadcast + `logs/market-supply.log` history.
+- [ ] Automatic expiry lifecycle notification + history hardening untuk price event.
 - [ ] Optional event templates/presets dari config.
 - [ ] Final beta.5 regression/security hardening.
 - [ ] Finalisasi `0.1.0-beta.5`.
 
-**Status implementasi:** `0.1.0-beta.5-RC1` pada branch `dev/beta.5` — temporary RP price events + governance + durable event history.
+**Status implementasi:** `0.1.0-beta.5-RC2` pada branch `dev/beta.5` — temporary RP price events + governed durable supply shipment/recovery.
 
-Dokumentasi: [`docs/BETA5_RC1.md`](docs/BETA5_RC1.md) dan [`docs/BETA5_RC1_TEST_PLAN.md`](docs/BETA5_RC1_TEST_PLAN.md).
+Dokumentasi: [`docs/BETA5_RC1.md`](docs/BETA5_RC1.md), [`docs/BETA5_RC1_TEST_PLAN.md`](docs/BETA5_RC1_TEST_PLAN.md), [`docs/BETA5_RC2.md`](docs/BETA5_RC2.md), dan [`docs/BETA5_RC2_TEST_PLAN.md`](docs/BETA5_RC2_TEST_PLAN.md).
 
 ## v1.0.0 — Production
 
