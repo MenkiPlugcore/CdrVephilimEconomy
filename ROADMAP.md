@@ -114,20 +114,32 @@ Target: harga merespons kondisi pasar tanpa menjadi liar.
 
 Dokumentasi final: [`docs/BETA4_FINAL.md`](docs/BETA4_FINAL.md).
 
-Dokumentasi development: [`docs/BETA4_RC1.md`](docs/BETA4_RC1.md), [`docs/BETA4_RC2.md`](docs/BETA4_RC2.md), [`docs/BETA4_RC3.md`](docs/BETA4_RC3.md), dan test plan RC1-RC3 pada folder `docs/`.
-
 ## beta.5 — RP Market Events
 
 Target: kondisi ekonomi menjadi pemantik roleplay.
 
-- [ ] Market modifier sementara.
-- [ ] Kelangkaan komoditas.
-- [ ] Bonus harga beli kerajaan.
-- [ ] Event supply tertentu.
-- [ ] Hook pengumuman alun-alun / broadcast RP.
-- [ ] Riwayat event ekonomi.
+- [x] Temporary market modifier layer di atas quote beta.4/static.
+- [x] Event `SCARCITY` untuk kelangkaan komoditas.
+- [x] Event `KINGDOM_BUY_BONUS` untuk bonus harga kerajaan membeli dari player.
+- [x] Event `DISCOUNT` untuk promo pembelian player dari NPC.
+- [x] Scope shop/listing dan wildcard `*`.
+- [x] Duration-based event dengan durable start/end timestamp.
+- [x] Hard clamp stacking event `0.25..4.0`.
+- [x] `market-events.yml` schema v1 + backup/temp atomic mutation.
+- [x] Safe runtime reload + rollback pada kegagalan apply event.
+- [x] Hook pengumuman / broadcast RP `[Pasar Kerajaan]` pada create/end.
+- [x] Riwayat mutation event di `logs/market-events.log` + admin audit.
+- [x] Governance view/manage permissions dan Royal Treasurer scope.
+- [x] Stale-price safety saat event mengubah quote pada GUI lama.
+- [ ] Governed supply event / stock shipment dengan durable recovery evidence.
+- [ ] Automatic expiry lifecycle notification + history hardening.
+- [ ] Optional event templates/presets dari config.
+- [ ] Final beta.5 regression/security hardening.
+- [ ] Finalisasi `0.1.0-beta.5`.
 
-**Status:** fase berikutnya setelah beta.4 dipromosikan ke `main` dan branch `dev/beta.5` dibuat dari baseline tersebut.
+**Status implementasi:** `0.1.0-beta.5-RC1` pada branch `dev/beta.5` — temporary RP price events + governance + durable event history.
+
+Dokumentasi: [`docs/BETA5_RC1.md`](docs/BETA5_RC1.md) dan [`docs/BETA5_RC1_TEST_PLAN.md`](docs/BETA5_RC1_TEST_PLAN.md).
 
 ## v1.0.0 — Production
 
