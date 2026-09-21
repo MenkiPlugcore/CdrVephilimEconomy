@@ -143,14 +143,15 @@ Target: kondisi ekonomi menjadi pemantik roleplay.
 - [x] Durable `expiry-recorded-at` / `expiry-recorded-by` evidence di `market-events.yml`.
 - [x] Automatic expiry audit/history + RP broadcast dengan at-most-once restart contract.
 - [x] Governance quota listener deduplication.
-- [x] Supply listener registration deduplication / single bootstrap.
-- [ ] Optional event templates/presets dari config.
-- [ ] Final beta.5 regression/security hardening.
-- [ ] Finalisasi `0.1.0-beta.5`.
+- [x] Supply listener single-bootstrap guard.
+- [x] Final bootstrap hardening: supply listener dan expiry lifecycle benar-benar diregistrasikan satu kali setelah admin audit tersedia.
+- [x] Final beta.5 regression/security hardening.
+- [x] Finalisasi `0.1.0-beta.5`.
+- [ ] Optional event templates/presets dari config — deferred, bukan blocker beta.5.
 
-**Status implementasi:** `0.1.0-beta.5-RC3` pada branch `dev/beta.5` — RP price events + governed durable supply + automatic expiry lifecycle/history hardening.
+**Status:** `0.1.0-beta.5` **FINAL / frozen RP Market Events baseline**.
 
-Dokumentasi: [`docs/BETA5_RC1.md`](docs/BETA5_RC1.md), [`docs/BETA5_RC1_TEST_PLAN.md`](docs/BETA5_RC1_TEST_PLAN.md), [`docs/BETA5_RC2.md`](docs/BETA5_RC2.md), [`docs/BETA5_RC2_TEST_PLAN.md`](docs/BETA5_RC2_TEST_PLAN.md), [`docs/BETA5_RC3.md`](docs/BETA5_RC3.md), dan [`docs/BETA5_RC3_TEST_PLAN.md`](docs/BETA5_RC3_TEST_PLAN.md).
+Dokumentasi final: [`docs/BETA5_FINAL.md`](docs/BETA5_FINAL.md).
 
 ## v1.0.0 — Production
 
