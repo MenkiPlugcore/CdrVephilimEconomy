@@ -4,14 +4,14 @@
 
 ## Status
 
-- **Current development:** `0.1.0-beta.5-RC1`
+- **Current development:** `0.1.0-beta.5-RC2`
 - **Frozen Controlled Dynamic Pricing baseline:** `0.1.0-beta.4`
 - **Frozen Governance baseline:** `0.1.0-beta.3`
 - **Frozen Shop Management baseline:** `0.1.0-beta.2`
 - **Frozen Core Economy baseline:** `0.1.0-beta.1`
 - Branch development aktif: `dev/beta.5`
 
-beta.5 RC1 membuka fase **RP Market Events** dengan modifier harga temporer yang tetap melewati transaction safety dan stale-quote protection baseline sebelumnya.
+beta.5 RC2 memperluas RP Market Events dari temporary price modifier menjadi governed one-shot stock shipment dengan durable recovery evidence.
 
 ## Core Economy
 
@@ -61,9 +61,11 @@ Fitur frozen beta.4:
 
 Dokumentasi: [`docs/BETA4_FINAL.md`](docs/BETA4_FINAL.md).
 
-## beta.5 RC1 — RP Market Events
+## beta.5 — RP Market Events
 
-Event RC1 dipasang **setelah** quote beta.4:
+### RC1 Price Events
+
+Event price dipasang **setelah** quote beta.4:
 
 ```text
 base price
@@ -74,7 +76,7 @@ base price
 
 Dynamic pricing beta.4 boleh OFF; event tetap dapat memodifikasi static base price.
 
-### Event Preset
+Preset:
 
 ```text
 SCARCITY
@@ -95,7 +97,7 @@ range 0.25..1.0
 
 Multiple event boleh overlap. Combined event multiplier di-hard-clamp `0.25..4.0`.
 
-### Scope
+Scope price event:
 
 ```text
 blacksmith/iron_ingot
@@ -103,22 +105,19 @@ blacksmith/*
 */*
 ```
 
-### Command
+Command price event:
 
 ```text
 /cve market status
 /cve market list
 /cve market show <id>
-
 /cve market scarcity <id> <shop|*> <listing|*> <multiplier> <minutes> [announcement]
 /cve market buybonus <id> <shop|*> <listing|*> <multiplier> <minutes> [announcement]
 /cve market discount <id> <shop|*> <listing|*> <multiplier> <minutes> [announcement]
 /cve market end <id> [reason]
 ```
 
-Durasi event `1..10080` menit.
-
-### Persistence & RP Hook
+Persistence:
 
 ```text
 market-events.yml
@@ -127,9 +126,58 @@ market-events.yml.tmp
 logs/market-events.log
 ```
 
-Create/end event menggunakan admin audit, candidate validation, backup, atomic replace, safe runtime reload, dan rollback bila apply gagal. Event start/end mengirim broadcast `[Pasar Kerajaan]` sebagai hook announcement RP.
+### RC2 Governed Supply Event
 
-Expired event tetap disimpan sebagai evidence tetapi tidak lagi memodifikasi quote.
+RC2 dapat menambah persistent stock satu listing melalui jalur stock admin yang sudah ada.
+
+```text
+/cve market supply status
+/cve market supply list
+/cve market supply show <id>
+/cve market supply create <id> <shop> <listing> <amount> [announcement]
+/cve market supply recover <id> <applied|not-applied> CONFIRM
+```
+
+Contoh:
+
+```text
+/cve market supply create royal_wheat_01 farmer wheat 500 Kiriman gandum kerajaan telah tiba!
+```
+
+Supply harus menargetkan satu shop/listing konkret; wildcard tidak diizinkan.
+
+Flow mutation:
+
+```text
+validate
+ -> admin audit REQUEST
+ -> PREPARED durable evidence
+ -> ShopAdminService stock ADD
+ -> verify durable stock snapshot
+ -> APPLIED evidence
+ -> admin audit SUCCESS
+ -> COMPLETED evidence
+ -> RP broadcast
+```
+
+Durable files:
+
+```text
+market-supply.yml
+market-supply.yml.bak
+market-supply.yml.tmp
+logs/market-supply.log
+```
+
+Crash recovery membandingkan current durable stock dengan evidence:
+
+```text
+current == before -> RECOVERED_NOT_APPLIED
+current == after  -> RECOVERED_APPLIED
+lainnya           -> BLOCKED / manual recovery
+```
+
+Supply tidak melakukan silent clamp. Bila shipment melebihi `max-stock`, seluruh request ditolak.
 
 ### Governance
 
@@ -140,20 +188,19 @@ cdrvephilimeconomy.market.view
 cdrvephilimeconomy.market.manage
 ```
 
-Rules RC1:
+Behavior:
 
-- Staff/Manager: read-only sesuai shop scope;
-- Royal Treasurer: create/end sesuai scope;
-- event global `*` membutuhkan Treasurer scope `*`;
+- Staff/Manager: read-only market/supply evidence sesuai shop scope;
+- Royal Treasurer: create/end price event serta create supply sesuai scope;
 - `market.view`: global read override;
-- `market.manage`: operator mutation override;
+- `market.manage`: operator mutation + supply recovery override;
 - full admin mewarisi keduanya.
 
-Market mutation membutuhkan local `admin-audit.log` writable; bila tidak, mutation fail-closed.
+Manual ambiguous supply recovery hanya untuk admin/operator `market.manage`.
 
 ### Safety
 
-RP event tidak langsung memutasi saldo, item, atau stock. Semua transaksi tetap melewati balance/inventory/stock validation, transaction journal, safety stop, dan stale-price check. Bila harga event berubah saat player memegang GUI lama, transaksi menjadi `PRICE_CHANGED` sebelum mutation.
+Price event tidak langsung memutasi saldo, item, atau stock. Supply event memang memutasi stock, tetapi hanya melalui `ShopAdminService`, setelah PREPARED recovery evidence dipersist. Economy safety stop, max-stock, stock repository persistence, dan admin audit tetap berlaku.
 
 ## Persistence Penting
 
@@ -167,6 +214,8 @@ pricing.yml.admin.bak
 market-state.yml
 market-events.yml
 market-events.yml.bak
+market-supply.yml
+market-supply.yml.bak
 governance.yml
 governance-approvals.yml
 governance-usage.yml
@@ -190,11 +239,13 @@ governance-dual-approval.yml
 - [`docs/BETA4_FINAL.md`](docs/BETA4_FINAL.md)
 - [`docs/BETA5_RC1.md`](docs/BETA5_RC1.md)
 - [`docs/BETA5_RC1_TEST_PLAN.md`](docs/BETA5_RC1_TEST_PLAN.md)
+- [`docs/BETA5_RC2.md`](docs/BETA5_RC2.md)
+- [`docs/BETA5_RC2_TEST_PLAN.md`](docs/BETA5_RC2_TEST_PLAN.md)
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - [`docs/ECONOMY_DESIGN.md`](docs/ECONOMY_DESIGN.md)
 
 ## Next beta.5 Update
 
-RC berikutnya menargetkan **governed supply event / stock shipment** dengan durable evidence dan recovery, lalu automatic expiry lifecycle/history hardening.
+Setelah RC2 lolos runtime QA, fase berikutnya adalah **automatic expiry lifecycle notification + market history hardening**, lalu optional event templates sebelum final regression beta.5.
 
 Plugin dikembangkan oleh **MenkiPlugcore** untuk **Vephilim Roleplay**.
