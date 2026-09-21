@@ -105,6 +105,13 @@ public final class GovernanceQuotaCommandListener implements Listener {
     }
 
     private void handleMarket(CommandSender sender, String[] tokens) {
+        try {
+            marketEvents.load();
+        } catch (IOException exception) {
+            sender.sendMessage("§c[CVE Market] market-events.yml tidak valid: " + exception.getMessage());
+            return;
+        }
+
         if (tokens.length < 3) {
             sendMarketHelp(sender);
             return;
@@ -112,14 +119,20 @@ public final class GovernanceQuotaCommandListener implements Listener {
         String action = tokens[2].toLowerCase(Locale.ROOT);
         switch (action) {
             case "status" -> {
-                if (!canViewMarketAny(sender)) returnMarketDenied(sender, "status");
+                if (!canViewMarketAny(sender)) {
+                    returnMarketDenied(sender, "status");
+                    return;
+                }
                 String runtime = plugin.dynamicPricingService() == null
                         ? "UNAVAILABLE"
                         : plugin.dynamicPricingService().marketEventStatus();
                 sender.sendMessage("§6[CVE Market] §fruntime=" + runtime + " §7admin=" + marketEvents.statusSummary());
             }
             case "list" -> {
-                if (!canViewMarketAny(sender)) returnMarketDenied(sender, "list");
+                if (!canViewMarketAny(sender)) {
+                    returnMarketDenied(sender, "list");
+                    return;
+                }
                 boolean any = false;
                 sender.sendMessage("§6[CVE Market] §fEvents:");
                 for (MarketEventService.MarketEvent marketEvent : marketEvents.all()) {
@@ -181,10 +194,31 @@ public final class GovernanceQuotaCommandListener implements Listener {
             return;
         }
         String shopId = normalize(tokens[4]);
+        String listingId = normalize(tokens[5]);
         if (!canManageMarketScope(sender, shopId)) {
             returnMarketDenied(sender, "create " + shopId);
             return;
         }
+
+        if (!shopId.equals("*")) {
+            Shop shop = plugin.findRuntimeShop(shopId).orElse(null);
+            if (shop == null) {
+                sender.sendMessage("§c[CVE Market] Shop runtime tidak ditemukan: " + shopId);
+                return;
+            }
+            if (!listingId.equals("*") && !shop.listings().containsKey(listingId)) {
+                sender.sendMessage("§c[CVE Market] Listing runtime tidak ditemukan: " + shopId + "/" + listingId);
+                return;
+            }
+        } else if (!listingId.equals("*")) {
+            boolean listingExists = plugin.runtimeShopIds().stream()
+                    .anyMatch(id -> plugin.runtimeListingIds(id).contains(listingId));
+            if (!listingExists) {
+                sender.sendMessage("§c[CVE Market] Listing ID tidak ditemukan pada runtime shop mana pun: " + listingId);
+                return;
+            }
+        }
+
         Double multiplier = parseDouble(tokens[6]);
         Integer minutes = parseInt(tokens[7]);
         if (multiplier == null || minutes == null) {
@@ -192,7 +226,7 @@ public final class GovernanceQuotaCommandListener implements Listener {
             return;
         }
         MarketEventService.Result result = marketEvents.createPreset(
-                sender.getName(), tokens[3], type, tokens[4], tokens[5],
+                sender.getName(), tokens[3], type, shopId, listingId,
                 multiplier, minutes, joinTail(tokens, 8));
         sendMarket(sender, result);
     }
