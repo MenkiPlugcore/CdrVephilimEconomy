@@ -2,38 +2,331 @@ meta:
   schema: 2
 
 shops:
-  blacksmith:
-    display-name: "<gold>Blacksmith Kerajaan</gold>"
+  food:
+    display-name: "<gold>Penjual Makanan</gold>"
     npc-id: -1
     size: 27
     enabled: false
     manager: ""
     listings:
-      iron_ingot:
-        material: IRON_INGOT
+      bread:
+        material: BREAD
+        slot: 9
+        mode: BUY
+        buy-price: 2.0
+        sell-price: 0.0
+        initial-stock: 512
+        max-stock: 2048
+      cooked_chicken:
+        material: COOKED_CHICKEN
         slot: 10
-        mode: BUY_SELL
-        buy-price: 50.0
-        sell-price: 30.0
-        initial-stock: 128
-        max-stock: 256
+        mode: BUY
+        buy-price: 3.0
+        sell-price: 0.0
+        initial-stock: 512
+        max-stock: 2048
+      cooked_mutton:
+        material: COOKED_MUTTON
+        slot: 11
+        mode: BUY
+        buy-price: 4.0
+        sell-price: 0.0
+        initial-stock: 512
+        max-stock: 2048
+      cooked_porkchop:
+        material: COOKED_PORKCHOP
+        slot: 12
+        mode: BUY
+        buy-price: 5.0
+        sell-price: 0.0
+        initial-stock: 512
+        max-stock: 2048
+      cooked_beef:
+        material: COOKED_BEEF
+        slot: 13
+        mode: BUY
+        buy-price: 5.0
+        sell-price: 0.0
+        initial-stock: 512
+        max-stock: 2048
+      cooked_rabbit:
+        material: COOKED_RABBIT
+        slot: 14
+        mode: BUY
+        buy-price: 4.0
+        sell-price: 0.0
+        initial-stock: 512
+        max-stock: 2048
+      cooked_cod:
+        material: COOKED_COD
+        slot: 15
+        mode: BUY
+        buy-price: 3.0
+        sell-price: 0.0
+        initial-stock: 512
+        max-stock: 2048
+      cooked_salmon:
+        material: COOKED_SALMON
+        slot: 16
+        mode: BUY
+        buy-price: 4.0
+        sell-price: 0.0
+        initial-stock: 512
+        max-stock: 2048
+      baked_potato:
+        material: BAKED_POTATO
+        slot: 17
+        mode: BUY
+        buy-price: 3.0
+        sell-price: 0.0
+        initial-stock: 512
+        max-stock: 2048
+
+  ore:
+    display-name: "<gray>Pembeli Ore Kerajaan</gray>"
+    npc-id: -1
+    size: 27
+    enabled: false
+    manager: ""
+    listings:
       coal:
         material: COAL
+        slot: 9
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 3.0
+        initial-stock: 0
+        max-stock: 4096
+      raw_iron:
+        material: RAW_IRON
+        slot: 10
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 5.0
+        initial-stock: 0
+        max-stock: 4096
+      iron_ingot:
+        material: IRON_INGOT
         slot: 11
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 7.0
+        initial-stock: 0
+        max-stock: 4096
+      raw_copper:
+        material: RAW_COPPER
+        slot: 12
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 2.0
+        initial-stock: 0
+        max-stock: 4096
+      copper_ingot:
+        material: COPPER_INGOT
+        slot: 13
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 3.0
+        initial-stock: 0
+        max-stock: 4096
+      raw_gold:
+        material: RAW_GOLD
+        slot: 14
         mode: SELL
         buy-price: 0.0
         sell-price: 8.0
         initial-stock: 0
-        max-stock: 1024
+        max-stock: 4096
+      gold_ingot:
+        material: GOLD_INGOT
+        slot: 15
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 12.0
+        initial-stock: 0
+        max-stock: 4096
+      redstone:
+        material: REDSTONE
+        slot: 16
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 4.0
+        initial-stock: 0
+        max-stock: 4096
+      lapis_lazuli:
+        material: LAPIS_LAZULI
+        slot: 17
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 4.0
+        initial-stock: 0
+        max-stock: 4096
+      diamond:
+        material: DIAMOND
+        slot: 18
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 75.0
+        initial-stock: 0
+        max-stock: 4096
+      emerald:
+        material: EMERALD
+        slot: 19
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 50.0
+        initial-stock: 0
+        max-stock: 4096
 
-# beta.2 RC2 schema v2:
-# - File beta.1/RC1 tanpa meta.schema dianggap legacy schema v1 dan dimigrasikan otomatis.
-# - Sebelum migration, backup dibuat sebagai shops.yml.schema-v1.bak.
-# - Operasi rutin shop dapat dilakukan melalui /cve shop ... tanpa edit YAML manual.
-# - /cve shop schema dan /cve shop validate dapat dipakai untuk diagnostic management config.
-# - npc-id harus menunjuk Citizens NPC yang valid; -1 berarti belum dibind.
-# - enabled harus true agar NPC membuka GUI.
-# - manager adalah metadata penanggung jawab shop dan tidak memberi permission otomatis.
-# - mode menentukan arah transaksi: BUY, SELL, atau BUY_SELL.
-# - stock runtime disimpan terpisah di stock.yml; initial-stock hanya dipakai saat listing baru pertama kali dibuat.
-# - identitas item saat ini masih berbasis item vanilla/material polos.
+  farmer:
+    display-name: "<green>Farmer Kerajaan</green>"
+    npc-id: -1
+    size: 27
+    enabled: false
+    manager: ""
+    listings:
+      wheat:
+        material: WHEAT
+        slot: 9
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 3.0
+        initial-stock: 0
+        max-stock: 4096
+      carrot:
+        material: CARROT
+        slot: 10
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 3.0
+        initial-stock: 0
+        max-stock: 4096
+      potato:
+        material: POTATO
+        slot: 11
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 3.0
+        initial-stock: 0
+        max-stock: 4096
+      beetroot:
+        material: BEETROOT
+        slot: 12
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 3.0
+        initial-stock: 0
+        max-stock: 4096
+      pumpkin:
+        material: PUMPKIN
+        slot: 13
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 6.0
+        initial-stock: 0
+        max-stock: 4096
+      sugar_cane:
+        material: SUGAR_CANE
+        slot: 14
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 4.0
+        initial-stock: 0
+        max-stock: 4096
+      cocoa_beans:
+        material: COCOA_BEANS
+        slot: 15
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 5.0
+        initial-stock: 0
+        max-stock: 4096
+      sweet_berries:
+        material: SWEET_BERRIES
+        slot: 16
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 4.0
+        initial-stock: 0
+        max-stock: 4096
+      glow_berries:
+        material: GLOW_BERRIES
+        slot: 17
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 4.0
+        initial-stock: 0
+        max-stock: 4096
+
+  fisherman:
+    display-name: "<aqua>Nelayan Kerajaan</aqua>"
+    npc-id: -1
+    size: 27
+    enabled: false
+    manager: ""
+    listings:
+      cod:
+        material: COD
+        slot: 11
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 4.0
+        initial-stock: 0
+        max-stock: 4096
+      salmon:
+        material: SALMON
+        slot: 12
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 5.0
+        initial-stock: 0
+        max-stock: 4096
+      tropical_fish:
+        material: TROPICAL_FISH
+        slot: 13
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 8.0
+        initial-stock: 0
+        max-stock: 4096
+      pufferfish:
+        material: PUFFERFISH
+        slot: 14
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 10.0
+        initial-stock: 0
+        max-stock: 4096
+      ink_sac:
+        material: INK_SAC
+        slot: 15
+        mode: SELL
+        buy-price: 0.0
+        sell-price: 5.0
+        initial-stock: 0
+        max-stock: 4096
+
+# Official Vephilim NPC catalog baseline before v1.0.0.
+# BUY = player buys from NPC. SELL = player sells to NPC.
+# The shops are whitelist-based: items not listed here cannot be traded by that NPC.
+# Therefore the requested blacklist items are intentionally absent from listings.
+#
+# Blacklist food: GOLDEN_APPLE, ENCHANTED_GOLDEN_APPLE, GOLDEN_CARROT, SUSPICIOUS_STEW.
+# Blacklist ore: NETHER_QUARTZ, NETHER_GOLD_ORE, ANCIENT_DEBRIS, NETHERITE_SCRAP,
+# NETHERITE_INGOT, and all Nether ore/resources not explicitly listed.
+# Blacklist farmer: MELON, MELON_SLICE, NETHER_WART, CHORUS_FRUIT, CHORUS_FLOWER,
+# and Nether farm products not explicitly listed.
+# Blacklist fisherman: NAUTILUS_SHELL, HEART_OF_THE_SEA, enchanted fishing rods,
+# and fishing-treasure items not explicitly listed.
+#
+# Fresh-install stock defaults:
+# - food is BUY-only and starts with 512 stock/item so the NPC is immediately usable;
+# - SELL-only shops start at 0 and accept stock up to 4096/item.
+# Existing servers keep their current stock.yml; initial-stock only seeds brand-new listings.
+#
+# Schema notes:
+# - npc-id: -1 means not yet bound to a Citizens NPC.
+# - enabled: false prevents accidental activation before NPC binding/review.
+# - manager is metadata only and does not grant permission.
+# - runtime stock is stored separately in stock.yml.
+# - item identity is currently plain vanilla/material based.

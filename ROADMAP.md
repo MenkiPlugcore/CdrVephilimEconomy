@@ -157,15 +157,36 @@ Dokumentasi final: [`docs/BETA5_FINAL.md`](docs/BETA5_FINAL.md).
 
 Target: stabil untuk digunakan sebagai economy utama Vephilim Roleplay.
 
+### RC1 — production persistence/runtime hardening
+
+- [x] Official Vephilim NPC catalog baseline.
+- [x] Branch production `dev/v1.0.0`.
+- [x] Version line `1.0.0-RC1`.
+- [x] Explicit `MarketRuntimeBootstrap` ownership untuk supply + expiry lifecycle.
+- [x] Governance initialization marker `governance.yml.initialized`.
+- [x] Lost-primary governance recovery hanya dari valid backup.
+- [x] Fail-closed governance bila primary hilang setelah initialization dan backup tidak tersedia/invalid.
+- [x] Governance grant/revoke post-commit audit semantics.
+- [x] Production runtime regression plan.
+
+### Remaining production gates
+
 - [ ] Regression test transaksi skala production.
-- [ ] Stress test transaksi bersamaan.
+- [ ] Stress/concurrency test transaksi bersamaan.
 - [ ] Recovery drill restart/crash.
+- [ ] Harden initialization/recovery contract untuk approval/quota/dual-approval ledgers.
+- [ ] Scope/tab-completion governance cleanup.
 - [ ] Dokumentasi instalasi.
 - [ ] Dokumentasi konfigurasi.
 - [ ] Dokumentasi permission.
 - [ ] Migration/versioning data lintas beta.
 - [ ] Final security audit.
-- [ ] Production release.
+- [ ] Promote `1.0.0` production release.
+
+**Status implementasi:** `1.0.0-RC1` pada branch `dev/v1.0.0` — production hardening aktif, belum FINAL.
+
+Dokumentasi RC1: [`docs/V1_RC1.md`](docs/V1_RC1.md).  
+Test plan: [`docs/V1_TEST_PLAN.md`](docs/V1_TEST_PLAN.md).
 
 ## Non-goals Awal
 

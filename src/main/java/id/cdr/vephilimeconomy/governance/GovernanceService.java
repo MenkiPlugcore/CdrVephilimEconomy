@@ -2,8 +2,7 @@ package id.cdr.vephilimeconomy.governance;
 
 import id.cdr.vephilimeconomy.CdrVephilimEconomy;
 import id.cdr.vephilimeconomy.admin.AdminAuditService;
-import id.cdr.vephilimeconomy.market.MarketEventLifecycleService;
-import id.cdr.vephilimeconomy.market.MarketSupplyCommandListener;
+import id.cdr.vephilimeconomy.market.MarketRuntimeBootstrap;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.ConfigurationSection;
@@ -13,9 +12,11 @@ import org.bukkit.entity.Player;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -41,7 +42,9 @@ public final class GovernanceService {
     private final File file;
     private final File backupFile;
     private final File tempFile;
+    private final File initializedMarker;
     private final Map<UUID, Assignment> assignments = new LinkedHashMap<>();
+    private final boolean marketRuntimeReady;
 
     private boolean healthy;
     private String healthDetail = "not loaded";
@@ -52,28 +55,52 @@ public final class GovernanceService {
         this.file = new File(plugin.getDataFolder(), "governance.yml");
         this.backupFile = new File(plugin.getDataFolder(), "governance.yml.bak");
         this.tempFile = new File(plugin.getDataFolder(), "governance.yml.tmp");
+        this.initializedMarker = new File(plugin.getDataFolder(), "governance.yml.initialized");
 
-        // beta.5 RC3: GovernanceService no longer registers its own quota command
-        // listener. CveCommand owns the single GovernanceQuotaCommandListener and
-        // its single quota ledger, preventing every governed mutation from being
-        // reserved twice. Market beta.5 listeners are bootstrapped here once,
-        // because this service itself is created once during plugin enable.
-        plugin.getServer().getPluginManager().registerEvents(
-                new MarketSupplyCommandListener(plugin, audit), plugin);
-        new MarketEventLifecycleService(plugin, audit).start();
+        // v1 production hardening: market supply/lifecycle hooks have one explicit owner.
+        // MarketRuntimeBootstrap de-duplicates registration per plugin instance.
+        this.marketRuntimeReady = MarketRuntimeBootstrap.start(plugin, audit);
+        if (!marketRuntimeReady) {
+            plugin.getLogger().severe("Market runtime bootstrap gagal; supply/expiry lifecycle mungkin tidak tersedia.");
+        }
     }
 
     public synchronized Result load() {
         try {
+            Map<UUID, Assignment> loaded;
+            boolean recovered = false;
+
             if (!file.isFile()) {
-                persist(Collections.emptyMap());
+                if (initializedMarker.isFile()) {
+                    if (!backupFile.isFile()) {
+                        throw new IOException("governance.yml hilang setelah pernah diinisialisasi dan backup tidak tersedia. "
+                                + "State governance ditahan fail-closed untuk mencegah reset assignment diam-diam.");
+                    }
+                    loaded = readStrict(backupFile);
+                    restoreBackupToPrimary();
+                    recovered = true;
+                    plugin.getLogger().warning("governance.yml hilang; state berhasil direcover dari governance.yml.bak.");
+                } else {
+                    persist(Collections.emptyMap());
+                    writeInitializedMarker();
+                    loaded = Collections.emptyMap();
+                }
+            } else {
+                loaded = readStrict(file);
+                // Migration for installations created before the v1 marker contract.
+                if (!initializedMarker.isFile()) {
+                    writeInitializedMarker();
+                }
             }
-            Map<UUID, Assignment> loaded = readStrict(file);
+
             assignments.clear();
             assignments.putAll(loaded);
             healthy = true;
-            healthDetail = "schema=v" + SCHEMA + ", members=" + assignments.size();
-            return Result.ok("Governance loaded: " + healthDetail + ".");
+            healthDetail = "schema=v" + SCHEMA
+                    + ", members=" + assignments.size()
+                    + ", marker=" + initializedMarker.isFile()
+                    + ", marketRuntime=" + (marketRuntimeReady ? "OK" : "FAIL");
+            return Result.ok("Governance loaded: " + healthDetail + (recovered ? ", recovered=backup" : "") + ".");
         } catch (IOException exception) {
             healthy = false;
             healthDetail = exception.getMessage();
@@ -124,13 +151,20 @@ public final class GovernanceService {
 
         try {
             persist(candidate);
-            assignments.clear();
-            assignments.putAll(candidate);
-            audit.record(actor, "GOVERNANCE_GRANT_SUCCESS", detail);
-            return Result.ok(target.getName() + " sekarang " + role + " scope=" + String.join(",", scopes) + ".");
         } catch (IOException exception) {
             tryRecord(actor, "GOVERNANCE_GRANT_FAILED", detail + "; error=" + exception.getMessage());
             return Result.fail("Grant gagal dipersist: " + exception.getMessage());
+        }
+
+        assignments.clear();
+        assignments.putAll(candidate);
+        try {
+            audit.record(actor, "GOVERNANCE_GRANT_SUCCESS", detail);
+            return Result.ok(target.getName() + " sekarang " + role + " scope=" + String.join(",", scopes) + ".");
+        } catch (IOException exception) {
+            plugin.getLogger().severe("Grant governance sudah COMMITTED tetapi SUCCESS audit gagal: " + exception.getMessage());
+            return Result.ok(target.getName() + " sekarang " + role + " scope=" + String.join(",", scopes)
+                    + ". WARNING: mutation sudah committed, tetapi success audit gagal ditulis.");
         }
     }
 
@@ -177,13 +211,20 @@ public final class GovernanceService {
 
         try {
             persist(candidate);
-            assignments.clear();
-            assignments.putAll(candidate);
-            audit.record(actor, "GOVERNANCE_REVOKE_SUCCESS", detail);
-            return Result.ok("Governance " + old.lastKnownName() + " diperbarui. scope=" + scope + " dicabut.");
         } catch (IOException exception) {
             tryRecord(actor, "GOVERNANCE_REVOKE_FAILED", detail + "; error=" + exception.getMessage());
             return Result.fail("Revoke gagal dipersist: " + exception.getMessage());
+        }
+
+        assignments.clear();
+        assignments.putAll(candidate);
+        try {
+            audit.record(actor, "GOVERNANCE_REVOKE_SUCCESS", detail);
+            return Result.ok("Governance " + old.lastKnownName() + " diperbarui. scope=" + scope + " dicabut.");
+        } catch (IOException exception) {
+            plugin.getLogger().severe("Revoke governance sudah COMMITTED tetapi SUCCESS audit gagal: " + exception.getMessage());
+            return Result.ok("Governance " + old.lastKnownName() + " diperbarui. scope=" + scope
+                    + " dicabut. WARNING: mutation sudah committed, tetapi success audit gagal ditulis.");
         }
     }
 
@@ -402,12 +443,34 @@ public final class GovernanceService {
         }
         yaml.save(tempFile);
         readStrict(tempFile);
+        moveReplace(tempFile, file);
+    }
+
+    private void restoreBackupToPrimary() throws IOException {
+        Files.copy(backupFile.toPath(), tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        readStrict(tempFile);
+        moveReplace(tempFile, file);
+    }
+
+    private void writeInitializedMarker() throws IOException {
+        File parent = initializedMarker.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw new IOException("Tidak dapat membuat folder marker governance.");
+        }
+        String content = "schema=" + SCHEMA + System.lineSeparator()
+                + "initialized-at=" + Instant.now() + System.lineSeparator();
+        Files.writeString(initializedMarker.toPath(), content, StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+    }
+
+    private static void moveReplace(File source, File target) throws IOException {
         try {
-            Files.move(tempFile.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            Files.move(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
         } catch (AtomicMoveNotSupportedException exception) {
-            Files.move(tempFile.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            Files.move(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
         } finally {
-            Files.deleteIfExists(tempFile.toPath());
+            Files.deleteIfExists(source.toPath());
         }
     }
 
