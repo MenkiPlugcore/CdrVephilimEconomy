@@ -9,9 +9,25 @@
 - **Frozen Governance baseline:** `0.1.0-beta.3`
 - **Frozen Shop Management baseline:** `0.1.0-beta.2`
 - **Frozen Core Economy baseline:** `0.1.0-beta.1`
-- Branch release: `dev/beta.5`
+- beta.5 sudah dipromosikan ke `main`.
+- Catalog preparation branch: `prep/v1.0.0-catalog`.
 
 beta.5 FINAL membekukan temporary RP price events, governed one-shot supply shipment, automatic natural-expiry lifecycle, durable recovery evidence, dan final runtime bootstrap hardening.
+
+## Official Vephilim NPC Catalog
+
+Sebelum production hardening `v1.0.0`, default `shops.yml` sekarang membawa empat baseline NPC ekonomi resmi:
+
+```text
+food       — player BUY makanan dari NPC
+ore        — player SELL ore/mineral ke NPC
+farmer     — player SELL hasil farm ke NPC
+fisherman  — player SELL hasil nelayan ke NPC
+```
+
+Harga dan blacklist resmi didokumentasikan di [`docs/VEPHILIM_NPC_CATALOG.md`](docs/VEPHILIM_NPC_CATALOG.md).
+
+Shop default tetap `enabled: false` dan `npc-id: -1` sampai Citizens NPC dibind dan direview. Existing server yang sudah punya `plugins/CdrVephilimEconomy/shops.yml` tidak ditimpa otomatis; catalog harus di-merge atau dibuat melalui `/cve shop ...` agar NPC binding/config existing tetap aman.
 
 ## Core Economy
 
@@ -268,6 +284,7 @@ governance-dual-approval.yml
 ## Dokumentasi
 
 - [`ROADMAP.md`](ROADMAP.md)
+- [`docs/VEPHILIM_NPC_CATALOG.md`](docs/VEPHILIM_NPC_CATALOG.md)
 - [`docs/BETA1_FINAL.md`](docs/BETA1_FINAL.md)
 - [`docs/BETA2_FINAL.md`](docs/BETA2_FINAL.md)
 - [`docs/BETA3_FINAL.md`](docs/BETA3_FINAL.md)
@@ -283,6 +300,6 @@ Optional event templates/presets dari config ditunda karena bukan correctness/se
 
 ## Next Phase
 
-Setelah `dev/beta.5` dipromosikan ke `main`, fokus berikutnya adalah production hardening menuju `v1.0.0`: regression skala production, stress/concurrency, crash-recovery drill, migration/versioning, dokumentasi operator, dan final security audit.
+Setelah official NPC catalog baseline direview dan dipasang, fokus berikutnya adalah production hardening menuju `v1.0.0`: regression skala production, stress/concurrency, crash-recovery drill, migration/versioning, dokumentasi operator, dan final security audit.
 
 Plugin dikembangkan oleh **MenkiPlugcore** untuk **Vephilim Roleplay**.
