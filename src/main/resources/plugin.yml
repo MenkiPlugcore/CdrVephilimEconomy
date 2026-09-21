@@ -1,5 +1,5 @@
 name: CdrVephilimEconomy
-version: '0.1.0-beta.5-RC1'
+version: '0.1.0-beta.5-RC2'
 main: id.cdr.vephilimeconomy.CdrVephilimEconomy
 api-version: '1.21.11'
 authors: [MenkiPlugcore]
@@ -85,8 +85,8 @@ permissions:
     default: false
 
   cdrvephilimeconomy.market.view:
-    description: View RP market events globally regardless of governance shop scope.
+    description: View RP market events and supply-event evidence globally regardless of governance shop scope.
     default: false
   cdrvephilimeconomy.market.manage:
-    description: Create and end RP market events without Royal Treasurer scope restrictions.
+    description: Create/end RP market events, create supply events, and recover supply evidence without Royal Treasurer scope restrictions.
     default: false
