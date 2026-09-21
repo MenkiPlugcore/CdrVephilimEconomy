@@ -27,12 +27,11 @@ import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
 /**
- * beta.5 RC1 durable RP market-event engine.
+ * beta.5 durable RP market-event engine.
  *
  * Events are temporary price modifiers layered after beta.4's bounded dynamic
- * price. They never directly mutate player balance, inventory, or shop stock.
- * This keeps the transaction journal as the single mutation boundary while
- * allowing RP events to influence the quote the player actually sees.
+ * price. RC2 additionally wires the governed one-shot supply command runtime,
+ * while supply stock mutation itself remains isolated in MarketSupplyService.
  */
 public final class MarketEventService {
     public static final int SCHEMA_VERSION = 1;
@@ -66,6 +65,8 @@ public final class MarketEventService {
     /** Administrative instance used by the /cve market command listener. */
     public MarketEventService(CdrVephilimEconomy plugin, AdminAuditService adminAudit) {
         this(plugin.getDataFolder(), plugin.getLogger(), plugin, adminAudit);
+        plugin.getServer().getPluginManager().registerEvents(
+                new MarketSupplyCommandListener(plugin, adminAudit), plugin);
     }
 
     private MarketEventService(File dataFolder, Logger logger,
