@@ -129,6 +129,8 @@ messages:
   inventory-full: "<red>Inventory tidak memiliki ruang yang cukup.</red>"
   max-stock: "<red>Pedagang tidak dapat menerima stok sebanyak itu.</red>"
   busy: "<yellow>Transaksi sedang diproses. Coba lagi sebentar.</yellow>"
+  price-changed: "<yellow>Harga pasar baru saja berubah. Daftar harga diperbarui; klik lagi untuk konfirmasi harga terbaru.</yellow>"
+  market-churn: "<yellow>Pasar menahan transaksi berlawanan arah. Tunggu {seconds} detik sebelum membalik BUY/SELL komoditas ini.</yellow>"
   not-allowed: "<red>Transaksi tersebut tidak diizinkan oleh pedagang.</red>"
   too-far: "<red>Kamu terlalu jauh dari pedagang. Dekati NPC untuk melanjutkan transaksi.</red>"
   safety-stop: "<dark_red>Sistem ekonomi sedang dikunci otomatis karena mendeteksi kegagalan transaksi kritis. Hubungi staff.</dark_red>"

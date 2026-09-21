@@ -1,0 +1,53 @@
+meta:
+  schema: 1
+
+# Master switch beta.4. Default OFF agar upgrade dari beta.3 tidak mengubah harga.
+enabled: false
+
+# Market stability beta.4 FINAL.
+# Quote dinamis tidak mengikuti setiap perubahan stock secara instan. Harga hanya
+# disampling ulang setelah cooldown selesai DAN stock bergerak cukup jauh dari
+# sample terakhir. Sample multiplier disimpan durable di market-state.yml.
+stability:
+  # Minimum jeda antar perubahan quote pasar untuk listing yang sama.
+  # Valid: 1-3600 detik.
+  quote-cooldown-seconds: 30
+
+  # Setelah cooldown selesai, stock juga harus berubah minimal sebesar ini dari
+  # sampled-stock sebelumnya sebelum multiplier baru dipersist.
+  # Valid: 1-2304 item.
+  min-stock-change-to-resample: 8
+
+  # Player yang baru BUY tidak boleh langsung SELL listing dinamis yang sama,
+  # dan sebaliknya. 0 menonaktifkan guard ini. Valid: 0-600 detik.
+  reversal-cooldown-seconds: 15
+
+# Dynamic pricing memakai sampled stock ratio terhadap max-stock.
+# Harga dasar tetap berasal dari buy-price / sell-price di shops.yml.
+# Effective price = base price × bounded multiplier.
+#
+# pressure positif  = sampled stock di bawah target -> harga naik
+# pressure negatif  = sampled stock di atas target -> harga turun
+shops:
+  blacksmith:
+    iron_ingot:
+      enabled: false
+      target-stock-ratio: 0.50
+      sensitivity: 0.50
+      min-multiplier: 0.75
+      max-multiplier: 1.50
+
+# Untuk mengaktifkan contoh:
+# 1. set enabled: true pada root file;
+# 2. set enabled: true pada listing yang diinginkan;
+# 3. jalankan /cve reload.
+#
+# Batas policy:
+# - target-stock-ratio: 0.05 - 0.95
+# - sensitivity: 0 - 5
+# - min/max-multiplier: >0 sampai 10
+# - max-multiplier harus >= min-multiplier
+#
+# market-state.yml adalah runtime evidence dan tidak perlu diedit manual.
+# Jika file state corrupt/unwritable, dynamic pricing fail-closed ke base price
+# sementara core BUY/SELL tetap dapat berjalan.

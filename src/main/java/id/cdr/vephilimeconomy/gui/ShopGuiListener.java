@@ -1,6 +1,7 @@
 package id.cdr.vephilimeconomy.gui;
 
 import id.cdr.vephilimeconomy.economy.EconomyBridge;
+import id.cdr.vephilimeconomy.pricing.DynamicPricingService;
 import id.cdr.vephilimeconomy.shop.Shop;
 import id.cdr.vephilimeconomy.shop.ShopListing;
 import id.cdr.vephilimeconomy.shop.ShopRegistry;
@@ -20,6 +21,7 @@ import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.Locale;
@@ -98,7 +100,26 @@ public final class ShopGuiListener implements Listener {
             return;
         }
 
-        TransactionResult result = transactions.execute(player, shop, listing, type, amount);
+        ItemStack clicked = event.getCurrentItem();
+        double displayedPrice = gui.displayedPrice(clicked, type);
+        if (!Double.isFinite(displayedPrice)) {
+            sendConfigured(player, "messages.price-changed",
+                    "<yellow>Harga pasar perlu diperbarui. Silakan klik lagi.</yellow>");
+            refreshOrClose(player, shop);
+            return;
+        }
+
+        DynamicPricingService.ChurnDecision churn = gui.checkMarketChurn(player, shop, listing, type);
+        if (!churn.allowed()) {
+            long seconds = Math.max(1L, (churn.remainingMillis() + 999L) / 1000L);
+            String message = plugin.getConfig().getString("messages.market-churn",
+                            "<yellow>Tunggu {seconds} detik sebelum membalik arah transaksi pada komoditas ini.</yellow>")
+                    .replace("{seconds}", Long.toString(seconds));
+            sendRaw(player, message);
+            return;
+        }
+
+        TransactionResult result = transactions.execute(player, shop, listing, type, amount, displayedPrice);
         sendResult(player, listing, type, result);
 
         if (result.failure() == TransactionFailure.SAFETY_STOP) {
@@ -107,13 +128,11 @@ public final class ShopGuiListener implements Listener {
         }
 
         if (result.success()) {
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
-                if (player.isOnline() && isNearBoundNpc(player, shop)) {
-                    gui.open(player, shop);
-                } else if (player.isOnline()) {
-                    player.closeInventory();
-                }
-            });
+            gui.recordSuccessfulMarketTransaction(player, shop, listing, type);
+        }
+
+        if (result.success() || result.failure() == TransactionFailure.PRICE_CHANGED) {
+            refreshOrClose(player, shop);
         }
     }
 
@@ -121,11 +140,18 @@ public final class ShopGuiListener implements Listener {
     public void onDrag(InventoryDragEvent event) {
         Inventory top = event.getView().getTopInventory();
         if (top.getHolder() instanceof ShopInventoryHolder) {
-            // Hard-cancel every drag while the shop view is open. This also prevents
-            // unusual drag distributions confined to the player inventory from
-            // racing a transaction/GUI refresh in the same view.
             event.setCancelled(true);
         }
+    }
+
+    private void refreshOrClose(Player player, Shop shop) {
+        plugin.getServer().getScheduler().runTask(plugin, () -> {
+            if (player.isOnline() && isNearBoundNpc(player, shop)) {
+                gui.open(player, shop);
+            } else if (player.isOnline()) {
+                player.closeInventory();
+            }
+        });
     }
 
     private boolean isNearBoundNpc(Player player, Shop shop) {
@@ -180,6 +206,7 @@ public final class ShopGuiListener implements Listener {
             case INVENTORY_FULL -> "messages.inventory-full";
             case MAX_STOCK -> "messages.max-stock";
             case BUSY -> "messages.busy";
+            case PRICE_CHANGED -> "messages.price-changed";
             case NOT_ALLOWED -> "messages.not-allowed";
             case SAFETY_STOP -> "messages.safety-stop";
             case INTERNAL_ERROR, NONE -> "messages.internal-error";

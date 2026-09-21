@@ -56,29 +56,22 @@ Dokumentasi final: [`docs/BETA2_FINAL.md`](docs/BETA2_FINAL.md).
 
 Target: ekonomi dapat dikelola sebagai bagian dari RP kerajaan tanpa memberi full admin access ke seluruh staff.
 
-- [x] Role `ECONOMY_STAFF`.
-- [x] Role `ECONOMY_MANAGER`.
-- [x] Role `ROYAL_TREASURER`.
+- [x] Role `ECONOMY_STAFF`, `ECONOMY_MANAGER`, `ROYAL_TREASURER`.
 - [x] Scope per shop / global `*`.
-- [x] Persistent `governance.yml` berbasis UUID.
+- [x] Persistent governance assignment berbasis UUID.
 - [x] Command grant/revoke/list/who/reload.
-- [x] Integrasi governance capability ke Shop Management beta.2.
+- [x] Integrasi capability ke Shop Management beta.2.
 - [x] Per-operation price/stock guardrail.
 - [x] Durable sensitive-change approval queue.
-- [x] Anti-self-approval.
-- [x] Reviewer hierarchy + scope validation.
+- [x] Anti-self-approval + reviewer hierarchy/scope.
 - [x] Expiry, cancel, reject.
 - [x] Durable `EXECUTING` evidence + manual recovery.
-- [x] Rolling price/stock quota.
-- [x] Persistent `governance-usage.yml`.
-- [x] Cooldown anti-command-burst.
-- [x] Quota listener wired ke runtime command path.
+- [x] Rolling price/stock quota + cooldown.
+- [x] Persistent governance usage evidence.
 - [x] Two-person approval untuk extreme mutation.
-- [x] Distinct reviewer requirement.
-- [x] Minimal satu senior reviewer untuk extreme mutation secara default.
+- [x] Distinct reviewer + senior reviewer requirement.
 - [x] Durable first-review evidence + SHA-256 request fingerprint.
-- [x] Dual-approval fail-closed storage + history evidence.
-- [x] Final beta.3 regression/security hardening candidate RC4.
+- [x] Final beta.3 regression/security hardening.
 - [x] Finalisasi `0.1.0-beta.3`.
 
 **Status:** `0.1.0-beta.3` **FINAL / frozen Economy Staff & Governance baseline**.
@@ -89,14 +82,39 @@ Dokumentasi final: [`docs/BETA3_FINAL.md`](docs/BETA3_FINAL.md).
 
 Target: harga merespons kondisi pasar tanpa menjadi liar.
 
-- [ ] Harga berdasarkan supply/demand sederhana.
-- [ ] Minimum price.
-- [ ] Maximum price.
-- [ ] Sensitivity/rate per shop atau listing.
-- [ ] Cooldown perubahan harga.
-- [ ] Proteksi manipulasi transaksi bolak-balik.
-- [ ] Statistik harga dan stock.
-- [ ] Governance integration untuk perubahan parameter dynamic pricing.
+- [x] Harga stock-driven supply/demand sederhana dari stock ratio.
+- [x] Minimum price guard melalui `min-multiplier`.
+- [x] Maximum price guard melalui `max-multiplier`.
+- [x] Sensitivity + target-stock-ratio per listing.
+- [x] `pricing.yml` schema v1 dengan master switch default OFF.
+- [x] Effective BUY/SELL quote tampil di NPC GUI.
+- [x] Transaction journal/audit memakai harga efektif aktual.
+- [x] Stale-GUI price guard sebelum money/item mutation.
+- [x] Invalid `pricing.yml` membatalkan startup/reload secara aman.
+- [x] Quote cooldown/sampling supaya harga tidak berubah setiap transaksi.
+- [x] Minimum stock delta sebelum market resample.
+- [x] Durable `market-state.yml` + backup/temp persistence.
+- [x] Restart continuity untuk sampled multiplier.
+- [x] Policy fingerprint invalidation saat parameter market berubah.
+- [x] Fail-closed dynamic layer ke static base price jika market state rusak.
+- [x] Rapid opposite-direction BUY/SELL reversal guard per player/listing.
+- [x] Statistik transaction count, unit volume, turnover, effective-price average/range dari audit source of truth.
+- [x] Statistik window 1-720 jam + scoped shop/listing view.
+- [x] Governed `/cve pricing` management commands.
+- [x] Pricing view/manage permissions.
+- [x] Role/scope integration: Staff view, Manager bounded mutation, Treasurer escalation.
+- [x] Manager guardrail untuk target/sensitivity/floor/ceiling.
+- [x] Candidate validation + pricing backup/temp + runtime rollback.
+- [x] Mandatory local admin audit untuk pricing mutation.
+- [x] Final regression + security hardening beta.4.
+- [x] Finalisasi `0.1.0-beta.4`.
+- [ ] Dedicated pricing-parameter approval queue — deferred, bukan blocker beta.4.
+
+**Status:** `0.1.0-beta.4` **FINAL / frozen Controlled Dynamic Pricing baseline**.
+
+Dokumentasi final: [`docs/BETA4_FINAL.md`](docs/BETA4_FINAL.md).
+
+Dokumentasi development: [`docs/BETA4_RC1.md`](docs/BETA4_RC1.md), [`docs/BETA4_RC2.md`](docs/BETA4_RC2.md), [`docs/BETA4_RC3.md`](docs/BETA4_RC3.md), dan test plan RC1-RC3 pada folder `docs/`.
 
 ## beta.5 — RP Market Events
 
@@ -108,6 +126,8 @@ Target: kondisi ekonomi menjadi pemantik roleplay.
 - [ ] Event supply tertentu.
 - [ ] Hook pengumuman alun-alun / broadcast RP.
 - [ ] Riwayat event ekonomi.
+
+**Status:** fase berikutnya setelah beta.4 dipromosikan ke `main` dan branch `dev/beta.5` dibuat dari baseline tersebut.
 
 ## v1.0.0 — Production
 

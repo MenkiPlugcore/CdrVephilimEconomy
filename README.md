@@ -1,22 +1,23 @@
 # CdrVephilimEconomy
 
-`CdrVephilimEconomy` adalah plugin economy khusus **Vephilim Roleplay** dengan pendekatan NPC-first: player berdagang melalui Citizens NPC, sedangkan plugin menangani stock, harga, transaksi, recovery, audit, shop management, dan governance staff.
+`CdrVephilimEconomy` adalah plugin economy khusus **Vephilim Roleplay** dengan pendekatan NPC-first: player berdagang melalui Citizens NPC, sedangkan plugin menangani stock, harga, transaksi, recovery, audit, shop management, governance staff, dan controlled market pricing.
 
 ## Status
 
-- **Current stable development baseline:** `0.1.0-beta.3`
+- **Current stable beta:** `0.1.0-beta.4`
+- **Frozen Controlled Dynamic Pricing baseline:** `0.1.0-beta.4`
 - **Frozen Governance baseline:** `0.1.0-beta.3`
 - **Frozen Shop Management baseline:** `0.1.0-beta.2`
 - **Frozen Core Economy baseline:** `0.1.0-beta.1`
-- Branch development: `dev/beta.3`
+- Branch release: `dev/beta.4`
 
-beta.3 sudah ditutup sebagai baseline governance setelah RC1 role/scope, RC2 sensitive-change approval, RC3 rolling quota + cooldown, dan RC4 two-person approval + final security hardening.
+beta.4 FINAL membekukan bounded dynamic pricing, durable market sampling, anti-churn, market statistics, dan governed pricing management sebagai baseline resmi sebelum beta.5 RP Market Events.
 
 ## Core Economy
 
 - Citizens NPC sebagai front-end transaksi.
 - BUY / SELL / BUY_SELL per listing.
-- Persistent real stock dan static pricing.
+- Persistent real stock.
 - Vault economy bridge.
 - Transaction journal + persistent safety lock.
 - Fail-closed recovery untuk stock/pending transaction.
@@ -25,32 +26,9 @@ beta.3 sudah ditutup sebagai baseline governance setelah RC1 role/scope, RC2 sen
 
 ## Shop Management beta.2
 
-```text
-/cve shop list
-/cve shop info <shop>
-/cve shop schema
-/cve shop validate
-/cve shop create <id> [size] [display name]
-/cve shop delete <id> CONFIRM
-/cve shop name <shop> <display name>
-/cve shop size <shop> <size>
-/cve shop bind <shop> <npc-id|-1>
-/cve shop enable <shop>
-/cve shop disable <shop>
-/cve shop manager <shop> <name|none>
-/cve shop additem <shop> <listing> <material|hand> <slot> <mode> <buy> <sell> <initial> <max>
-/cve shop removeitem <shop> <listing> CONFIRM
-/cve shop mode <shop> <listing> <BUY|SELL|BUY_SELL>
-/cve shop slot <shop> <listing> <slot>
-/cve shop price <shop> <listing> <buy|sell> <value>
-/cve shop initialstock <shop> <listing> <value>
-/cve shop maxstock <shop> <listing> <value>
-/cve shop stock <shop> <listing> <set|add|remove> <amount>
-```
+Shop Management menyediakan CRUD shop/listing, Citizens binding, enable/disable, base-price/stock management, schema migration, candidate validation, backup, admin mutation journal, granular permission, dan local/Discord administrative audit.
 
-Shop management memakai `shops.yml` schema v2, candidate validation, backup, admin mutation journal, local administrative audit, dan optional Discord administrative audit.
-
-## beta.3 — Economy Staff & Governance
+## Economy Staff & Governance beta.3
 
 Role internal:
 
@@ -60,149 +38,139 @@ ECONOMY_MANAGER
 ROYAL_TREASURER
 ```
 
-Assignment governance berbasis UUID dan dibatasi per shop scope atau `*`.
+Governance memiliki per-shop scope, sensitive-change approval, anti-self-approval, rolling quota/cooldown, dan two-person approval untuk extreme mutation. Frozen contract beta.3 didokumentasikan di [`docs/BETA3_FINAL.md`](docs/BETA3_FINAL.md).
 
-```text
-/cve governance status
-/cve governance list
-/cve governance who <player>
-/cve governance grant <player> <role> <shop|*>
-/cve governance revoke <player> <shop|*|all>
-/cve governance reload
-```
+## beta.4 FINAL — Controlled Dynamic Pricing
 
-`ECONOMY_STAFF` dapat view, edit price, dan add/remove runtime stock pada scope. `ECONOMY_MANAGER` menambah capability bind/toggle/layout/listing/stock config/manager metadata. `ROYAL_TREASURER` memiliki seluruh capability governance termasuk create/delete.
-
-Permission beta.2 tetap backward compatible dan dianggap explicit operator override.
-
-## Sensitive-Change Approval
-
-Default role guardrail:
+Base price tetap berasal dari `shops.yml`. `pricing.yml` hanya mengatur multiplier market per listing.
 
 ```yaml
-governance:
-  limits:
-    economy-staff:
-      max-price-change-percent: 20.0
-      max-runtime-stock-delta: 128
-    economy-manager:
-      max-price-change-percent: 50.0
-      max-runtime-stock-delta: 1024
+meta:
+  schema: 1
 
-  approval:
-    enabled: true
-    expiry-minutes: 10
-    max-pending-per-requester: 5
+enabled: false
+
+stability:
+  quote-cooldown-seconds: 30
+  min-stock-change-to-resample: 8
+  reversal-cooldown-seconds: 15
+
+shops:
+  blacksmith:
+    iron_ingot:
+      enabled: false
+      target-stock-ratio: 0.50
+      sensitivity: 0.50
+      min-multiplier: 0.75
+      max-multiplier: 1.50
 ```
 
-Perubahan role-only yang melewati limit menjadi durable approval request. Requester tidak dapat approve/reject request sendiri. Approval memakai `EXECUTING` evidence sebelum mutation sehingga crash tidak membuat request direplay otomatis.
+Dynamic pricing default **OFF**, sehingga upgrade tidak otomatis mengubah harga server.
+
+Model dasarnya:
 
 ```text
-/cve governance approval status
-/cve governance approval list
-/cve governance approval show <id>
-/cve governance approval approve <id>
-/cve governance approval reject <id> [reason]
-/cve governance approval cancel <id>
-/cve governance approval reload
-/cve governance approval recover <id> <executed|not-executed> CONFIRM
+stockRatio = sampledStock / maxStock
+pressure   = normalized distance stockRatio dari target, -1..1
+multiplier = clamp(1 + sensitivity * pressure, minMultiplier, maxMultiplier)
+effective  = round2(basePrice * multiplier)
 ```
 
-## Rolling Governance Quota
+Stock langka menaikkan harga; stock berlebih menurunkan harga. BUY dan SELL memakai multiplier yang sama sehingga spread base price tetap proporsional.
 
-Direct mutation kecil tetap dibatasi secara kumulatif:
+### Durable Market Sampling
 
-```yaml
-governance:
-  quota:
-    enabled: true
-    retention-hours: 48
+Harga tidak bergerak setiap perubahan stock. Multiplier baru hanya dipersist bila belum ada sample, policy fingerprint berubah, atau quote cooldown sudah lewat **dan** stock bergerak minimal sebesar `min-stock-change-to-resample` dari sample terakhir.
 
-    economy-staff:
-      window-minutes: 60
-      max-price-percent-sum: 40.0
-      max-stock-delta-sum: 256
-      cooldown-seconds: 15
-
-    economy-manager:
-      window-minutes: 60
-      max-price-percent-sum: 100.0
-      max-stock-delta-sum: 4096
-      cooldown-seconds: 5
-```
-
-Quota reservation dipersist sebelum direct role mutation. Jika ledger corrupt/unwritable, direct role-only price/stock mutation diblokir fail-closed. `GovernanceQuotaCommandListener` dipasang langsung pada runtime command path.
-
-## Two-Person Extreme Approval
-
-Perubahan sangat besar membutuhkan dua reviewer berbeda:
-
-```yaml
-governance:
-  approval:
-    two-person:
-      enabled: true
-      price-change-percent-threshold: 100.0
-      price-from-zero-requires-two: true
-      stock-delta-threshold: 4096
-      stock-set-requires-two: true
-      require-at-least-one-senior-reviewer: true
-```
-
-Reviewer pertama hanya membuat durable first-review evidence. Reviewer kedua harus berbeda. Dengan policy default, minimal satu reviewer harus Royal Treasurer dengan scope sesuai, governance admin, atau full admin. First-review evidence memakai fingerprint SHA-256 request sehingga evidence lama tidak dapat dipakai untuk target mutation yang berubah.
-
-## Governance Persistence
+State disimpan di:
 
 ```text
+market-state.yml
+market-state.yml.bak
+market-state.yml.tmp
+```
+
+Restart tidak mereset sampled multiplier/cooldown. Jika market state rusak atau tidak writable, dynamic layer masuk `BLOCKED` dan quote kembali ke static base price tanpa mematikan core BUY/SELL.
+
+### Anti BUY/SELL Churn
+
+Untuk listing dynamic, player yang baru BUY tidak dapat langsung SELL listing yang sama, dan sebaliknya, selama `reversal-cooldown-seconds`. Same-direction BUY→BUY atau SELL→SELL tetap dianggap demand/supply normal.
+
+### Stale Quote Safety
+
+GUI menyimpan quote yang dilihat player. Transaction engine menghitung ulang quote sebelum mutation. Bila sampled quote berubah, transaksi menjadi `PRICE_CHANGED` sebelum uang, item, atau stock berubah, lalu GUI direfresh.
+
+### Market Statistics
+
+```text
+/cve pricing stats [shop] [listing] [hours]
+```
+
+Statistik dibaca dari `logs/audit.log`, bukan ledger transaksi kedua. Hanya `status=SUCCESS` yang dihitung. Output mencakup BUY/SELL transaction count, unit volume, value, average effective unit price, price range, net stock flow, turnover, serta first/last transaction pada window. Default 24 jam, maksimum 720 jam.
+
+### Governed Pricing Management
+
+```text
+/cve pricing status
+/cve pricing show <shop> <listing>
+/cve pricing stats [shop] [listing] [hours]
+/cve pricing set <shop> <listing> <enabled|target|sensitivity|min|max> <value>
+/cve pricing global <on|off>
+/cve pricing stability <quote-cooldown|min-stock-change|reversal-cooldown> <value>
+```
+
+Mutation `pricing.yml` menggunakan candidate validation, `pricing.yml.admin.tmp`, `pricing.yml.admin.bak`, safe runtime reload, rollback bila apply gagal, serta mandatory local admin audit.
+
+Governance behavior:
+
+- `ECONOMY_STAFF`: view policy/statistics pada shop scope; tidak dapat mutation pricing.
+- `ECONOMY_MANAGER`: dapat mutation policy listing dalam scope dengan guardrail ketat.
+- `ROYAL_TREASURER`: dapat mutation policy listing dalam scope; global/stability memerlukan scope `*`.
+- `cdrvephilimeconomy.pricing.manage`: explicit operator override.
+
+Manager guardrail per operasi:
+
+```text
+target-stock-ratio : 0.20..0.80, delta <= 0.10
+sensitivity        : 0.00..1.50, delta <= 0.25
+min-multiplier     : 0.50..1.00, delta <= 0.25
+max-multiplier     : 1.00..2.00, delta <= 0.25
+enabled            : toggle listing dalam scope
+```
+
+Dedicated approval queue khusus pricing parameter **deferred** dan bukan blocker beta.4 FINAL; perubahan di luar Manager guardrail dieskalasikan ke Royal Treasurer/admin/operator override.
+
+Permission pricing:
+
+```text
+cdrvephilimeconomy.pricing.view
+cdrvephilimeconomy.pricing.manage
+```
+
+`cdrvephilimeconomy.admin` mewarisi keduanya.
+
+## Persistence Penting
+
+```text
+stock.yml
+safety.lock
+pending-transactions/
+shops.yml
+pricing.yml
+pricing.yml.admin.bak
+market-state.yml
 governance.yml
-governance.yml.bak
-governance.yml.tmp
-
 governance-approvals.yml
-governance-approvals.yml.bak
-governance-approvals.yml.tmp
-
 governance-usage.yml
-governance-usage.yml.bak
-governance-usage.yml.tmp
-
 governance-dual-approval.yml
-governance-dual-approval.yml.bak
-governance-dual-approval.yml.tmp
-logs/governance-dual-approval-history.log
 ```
-
-## Permissions
-
-```text
-cdrvephilimeconomy.admin
-cdrvephilimeconomy.shop.view
-cdrvephilimeconomy.shop.create
-cdrvephilimeconomy.shop.delete
-cdrvephilimeconomy.shop.bind
-cdrvephilimeconomy.shop.toggle
-cdrvephilimeconomy.shop.edit
-cdrvephilimeconomy.shop.item
-cdrvephilimeconomy.shop.price
-cdrvephilimeconomy.shop.stock
-cdrvephilimeconomy.shop.manager
-cdrvephilimeconomy.governance.view
-cdrvephilimeconomy.governance.approve
-cdrvephilimeconomy.governance.admin
-```
-
-`cdrvephilimeconomy.admin` mewarisi seluruh permission plugin.
-
-## Audit
-
-Grant/revoke, approval, quota reservation, dan dual-review menggunakan `logs/admin-audit.log`. Jika Discord administrative audit aktif, event governance ikut dikirim async melalui sink yang sama.
 
 ## Integrasi
 
 - Paper 1.21.11 / Java 21
 - Citizens
 - Vault + economy provider
-- LuckPerms opsional untuk permission override
+- LuckPerms opsional
 - Discord webhook opsional
 
 ## Dokumentasi
@@ -211,16 +179,18 @@ Grant/revoke, approval, quota reservation, dan dual-review menggunakan `logs/adm
 - [`docs/BETA1_FINAL.md`](docs/BETA1_FINAL.md)
 - [`docs/BETA2_FINAL.md`](docs/BETA2_FINAL.md)
 - [`docs/BETA3_FINAL.md`](docs/BETA3_FINAL.md)
-- [`docs/BETA3_RC1.md`](docs/BETA3_RC1.md)
-- [`docs/BETA3_RC2.md`](docs/BETA3_RC2.md)
-- [`docs/BETA3_RC3.md`](docs/BETA3_RC3.md)
-- [`docs/BETA3_RC4.md`](docs/BETA3_RC4.md)
-- [`docs/BETA3_TEST_PLAN.md`](docs/BETA3_TEST_PLAN.md)
+- [`docs/BETA4_FINAL.md`](docs/BETA4_FINAL.md)
+- [`docs/BETA4_RC1.md`](docs/BETA4_RC1.md)
+- [`docs/BETA4_RC2.md`](docs/BETA4_RC2.md)
+- [`docs/BETA4_RC3.md`](docs/BETA4_RC3.md)
+- [`docs/BETA4_TEST_PLAN.md`](docs/BETA4_TEST_PLAN.md)
+- [`docs/BETA4_RC2_TEST_PLAN.md`](docs/BETA4_RC2_TEST_PLAN.md)
+- [`docs/BETA4_RC3_TEST_PLAN.md`](docs/BETA4_RC3_TEST_PLAN.md)
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - [`docs/ECONOMY_DESIGN.md`](docs/ECONOMY_DESIGN.md)
 
 ## Next Development Phase
 
-Setelah `0.1.0-beta.3` FINAL, development berikutnya adalah **beta.4 — Controlled Dynamic Pricing**. Governance beta.3 dianggap frozen baseline; bug fix harus dipisahkan dari fitur beta.4.
+Setelah `dev/beta.4` dipromosikan ke `main`, branch beta.4 dibekukan. Fase berikutnya adalah **beta.5 — RP Market Events**: market modifier sementara, scarcity event, bonus harga beli kerajaan, event supply, broadcast RP, dan event-history ekonomi.
 
 Plugin dikembangkan oleh **MenkiPlugcore** untuk **Vephilim Roleplay**.
