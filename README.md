@@ -4,14 +4,14 @@
 
 ## Status
 
-- **Current development:** `0.1.0-beta.5-RC3`
+- **Current frozen baseline:** `0.1.0-beta.5` — RP Market Events FINAL
 - **Frozen Controlled Dynamic Pricing baseline:** `0.1.0-beta.4`
 - **Frozen Governance baseline:** `0.1.0-beta.3`
 - **Frozen Shop Management baseline:** `0.1.0-beta.2`
 - **Frozen Core Economy baseline:** `0.1.0-beta.1`
-- Branch development aktif: `dev/beta.5`
+- Branch release: `dev/beta.5`
 
-beta.5 RC3 menambahkan automatic natural-expiry lifecycle, durable expiry evidence/history hardening, dan listener deduplication setelah RC2 supply shipment.
+beta.5 FINAL membekukan temporary RP price events, governed one-shot supply shipment, automatic natural-expiry lifecycle, durable recovery evidence, dan final runtime bootstrap hardening.
 
 ## Core Economy
 
@@ -61,9 +61,9 @@ Fitur frozen beta.4:
 
 Dokumentasi: [`docs/BETA4_FINAL.md`](docs/BETA4_FINAL.md).
 
-## beta.5 — RP Market Events
+## beta.5 FINAL — RP Market Events
 
-### RC1 Price Events
+### Temporary Price Events
 
 Event price dipasang **setelah** quote beta.4:
 
@@ -105,7 +105,7 @@ blacksmith/*
 */*
 ```
 
-Command price event:
+Command:
 
 ```text
 /cve market status
@@ -126,9 +126,9 @@ market-events.yml.tmp
 logs/market-events.log
 ```
 
-### RC2 Governed Supply Event
+### Governed Supply Shipment
 
-RC2 dapat menambah persistent stock satu listing melalui jalur stock admin yang sudah ada.
+Supply dapat menambah persistent stock satu listing melalui jalur stock admin yang sudah ada.
 
 ```text
 /cve market supply status
@@ -179,11 +179,9 @@ lainnya           -> BLOCKED / manual recovery
 
 Supply tidak melakukan silent clamp. Bila shipment melebihi `max-stock`, seluruh request ditolak.
 
-### RC3 Automatic Expiry Lifecycle
+### Automatic Expiry Lifecycle
 
-Price event sekarang memiliki lifecycle recorder otomatis. Effect harga tetap berhenti persis saat `ends-at`; scheduler hanya merekam bahwa natural expiry sudah diproses.
-
-Durable metadata baru di `market-events.yml`:
+Price event berhenti memengaruhi quote persis saat `ends-at`. Scheduler lifecycle hanya merekam evidence natural expiry:
 
 ```text
 expiry-recorded-at: <timestamp>
@@ -192,7 +190,7 @@ expiry-recorded-by: SYSTEM
 
 Setelah evidence tersimpan, plugin mencoba menulis `MARKET_EVENT_EXPIRED` ke admin audit dan `logs/market-events.log`, lalu broadcast automatic expiry.
 
-Urutan sengaja:
+Contract:
 
 ```text
 persist expiry evidence
@@ -200,9 +198,19 @@ persist expiry evidence
  -> broadcast
 ```
 
-sehingga restart/crash tidak menyebabkan duplicate expiry announcement. Broadcast memakai contract at-most-once; crash tepat setelah evidence commit dapat membuat chat notification terlewat, tetapi economic state dan durable lifecycle evidence tetap benar.
+Restart tidak menyebabkan duplicate expiry announcement. Notification menggunakan at-most-once semantics: crash tepat setelah evidence commit dapat membuat chat notification terlewat, tetapi economic state dan durable evidence tetap benar.
 
-RC3 juga merapikan runtime listener menjadi satu quota command listener dan satu supply command listener per plugin enable. Ini menghilangkan risiko double quota reservation/cooldown dari duplicate governance listener.
+### Final Runtime Bootstrap
+
+FINAL menutup regression bootstrap dari RC3 deduplication. `MarketRuntimeBootstrap` sekarang memastikan satu kali per plugin instance:
+
+```text
+1x GovernanceQuotaCommandListener
+1x MarketSupplyCommandListener
+1x MarketEventLifecycleService
+```
+
+Supply command dan expiry lifecycle tidak lagi bergantung pada hidden constructor registration, sementara guard bootstrap mencegah duplicate listener/task.
 
 ### Governance
 
@@ -264,17 +272,17 @@ governance-dual-approval.yml
 - [`docs/BETA2_FINAL.md`](docs/BETA2_FINAL.md)
 - [`docs/BETA3_FINAL.md`](docs/BETA3_FINAL.md)
 - [`docs/BETA4_FINAL.md`](docs/BETA4_FINAL.md)
+- [`docs/BETA5_FINAL.md`](docs/BETA5_FINAL.md)
 - [`docs/BETA5_RC1.md`](docs/BETA5_RC1.md)
-- [`docs/BETA5_RC1_TEST_PLAN.md`](docs/BETA5_RC1_TEST_PLAN.md)
 - [`docs/BETA5_RC2.md`](docs/BETA5_RC2.md)
-- [`docs/BETA5_RC2_TEST_PLAN.md`](docs/BETA5_RC2_TEST_PLAN.md)
 - [`docs/BETA5_RC3.md`](docs/BETA5_RC3.md)
-- [`docs/BETA5_RC3_TEST_PLAN.md`](docs/BETA5_RC3_TEST_PLAN.md)
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - [`docs/ECONOMY_DESIGN.md`](docs/ECONOMY_DESIGN.md)
 
-## Next beta.5 Update
+Optional event templates/presets dari config ditunda karena bukan correctness/security blocker beta.5.
 
-Setelah RC3 runtime QA, tinggal keputusan apakah optional event template/preset memang perlu. Jika tidak ada kebutuhan nyata, langsung final regression/security hardening menuju `0.1.0-beta.5 FINAL`.
+## Next Phase
+
+Setelah `dev/beta.5` dipromosikan ke `main`, fokus berikutnya adalah production hardening menuju `v1.0.0`: regression skala production, stress/concurrency, crash-recovery drill, migration/versioning, dokumentasi operator, dan final security audit.
 
 Plugin dikembangkan oleh **MenkiPlugcore** untuk **Vephilim Roleplay**.
