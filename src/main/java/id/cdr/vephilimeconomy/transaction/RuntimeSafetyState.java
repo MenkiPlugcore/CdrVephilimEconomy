@@ -1,5 +1,6 @@
 package id.cdr.vephilimeconomy.transaction;
 
+import id.cdr.vephilimeconomy.license.LicenseIntegrityGuard;
 import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
 
@@ -31,6 +32,9 @@ public final class RuntimeSafetyState {
     private volatile boolean persistenceHealthy = true;
 
     public RuntimeSafetyState(File dataFolder, Logger logger) {
+        if (!LicenseIntegrityGuard.verify(logger)) {
+            throw new IllegalStateException("MENKIESTES license integrity verification failed.");
+        }
         this.lockFile = new File(dataFolder, "safety.lock");
         this.tempFile = new File(dataFolder, "safety.lock.tmp");
         this.lastEvidenceFile = new File(dataFolder, "safety.lock.last");
