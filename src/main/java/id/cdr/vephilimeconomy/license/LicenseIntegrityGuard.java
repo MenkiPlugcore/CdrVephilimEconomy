@@ -17,6 +17,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.UUID;
+import java.util.logging.Logger;
 
 /**
  * Mandatory MENKIESTES license integrity guard.
@@ -51,6 +52,30 @@ public final class LicenseIntegrityGuard {
 
     public LicenseIntegrityGuard(CdrVephilimEconomy plugin) {
         this.plugin = plugin;
+    }
+
+    /**
+     * Backward-compatible early embedded-resource verification used by the
+     * transaction safety bootstrap before the runtime LICENSE.txt guard starts.
+     */
+    public static boolean verify(Logger logger) {
+        try (InputStream input = LicenseIntegrityGuard.class.getClassLoader()
+                .getResourceAsStream(EMBEDDED_RESOURCE)) {
+            if (input == null) {
+                logger.severe("MENKIESTES license integrity check FAILED: embedded license resource is missing.");
+                return false;
+            }
+            String actual = sha256(input.readAllBytes());
+            if (!EXPECTED_SHA256.equalsIgnoreCase(actual)) {
+                logger.severe("MENKIESTES license integrity check FAILED: embedded license fingerprint mismatch.");
+                logger.severe("Expected=" + EXPECTED_SHA256 + ", actual=" + actual + ".");
+                return false;
+            }
+            return true;
+        } catch (IOException | NoSuchAlgorithmException exception) {
+            logger.severe("MENKIESTES license integrity check FAILED: " + exception.getMessage());
+            return false;
+        }
     }
 
     /**
