@@ -2,6 +2,7 @@ package id.cdr.vephilimeconomy.transaction;
 
 import id.cdr.vephilimeconomy.audit.AuditEntry;
 import id.cdr.vephilimeconomy.audit.AuditService;
+import id.cdr.vephilimeconomy.discount.PlayerDiscountService;
 import id.cdr.vephilimeconomy.economy.EconomyBridge;
 import id.cdr.vephilimeconomy.pricing.DynamicPricingService;
 import id.cdr.vephilimeconomy.shop.Shop;
@@ -64,15 +65,15 @@ public final class TransactionService {
 
     /**
      * Executes against an optional price the player actually saw in the GUI.
-     * When dynamic pricing moved after the GUI was rendered, the transaction is
-     * rejected before any money/item mutation and the caller can refresh the UI.
+     * When market pricing or a personal BUY discount changes after the GUI was
+     * rendered, the transaction is rejected before any money/item mutation.
      */
     public TransactionResult execute(Player player, Shop shop, ShopListing listing, TransactionType type,
                                      int amount, double expectedUnitPrice) {
         UUID transactionId = UUID.randomUUID();
 
         if (safetyState.isStopped()) {
-            return safetyStopped(transactionId, shop, listing, type, amount);
+            return safetyStopped(transactionId, player, shop, listing, type, amount);
         }
         if (!Bukkit.isPrimaryThread()) {
             logger.severe("Blocked asynchronous economy transaction attempt: tx=" + transactionId
@@ -114,7 +115,7 @@ public final class TransactionService {
 
             try {
                 if (safetyState.isStopped()) {
-                    return safetyStopped(transactionId, shop, listing, type, amount);
+                    return safetyStopped(transactionId, player, shop, listing, type, amount);
                 }
                 return type == TransactionType.BUY
                         ? buy(transactionId, player, shop, listing, amount, expectedUnitPrice)
@@ -151,7 +152,7 @@ public final class TransactionService {
     private TransactionResult buy(UUID tx, Player player, Shop shop, ShopListing listing,
                                   int amount, double expectedUnitPrice) {
         int stockBefore = stocks.getStock(shop.id(), listing.id());
-        double unitPrice = quote(shop, listing, stockBefore, TransactionType.BUY);
+        double unitPrice = quote(player, shop, listing, stockBefore, TransactionType.BUY);
         if (priceChanged(expectedUnitPrice, unitPrice)) {
             return rejectAtPrice(tx, player, shop, listing, TransactionType.BUY, amount,
                     TransactionFailure.PRICE_CHANGED,
@@ -284,14 +285,20 @@ public final class TransactionService {
 
         TransactionResult result = new TransactionResult(tx, true, TransactionFailure.NONE, amount,
                 unitPrice, total, stockBefore, stockAfter);
-        record(player, shop, listing, TransactionType.BUY, result, "SUCCESS", pricingDetail(shop, listing, unitPrice));
+        String discountDetail = PlayerDiscountService.currentPercent(player.getUniqueId(), shop.id()) > 0.0D
+                ? "personalDiscount=" + PlayerDiscountService.currentPercent(player.getUniqueId(), shop.id()) + "%"
+                : "";
+        String marketDetail = pricingDetail(shop, listing, unitPrice);
+        String auditDetail = marketDetail.isBlank() ? discountDetail
+                : discountDetail.isBlank() ? marketDetail : marketDetail + "; " + discountDetail;
+        record(player, shop, listing, TransactionType.BUY, result, "SUCCESS", auditDetail);
         return result;
     }
 
     private TransactionResult sell(UUID tx, Player player, Shop shop, ShopListing listing,
                                    int amount, double expectedUnitPrice) {
         int stockBefore = stocks.getStock(shop.id(), listing.id());
-        double unitPrice = quote(shop, listing, stockBefore, TransactionType.SELL);
+        double unitPrice = quote(player, shop, listing, stockBefore, TransactionType.SELL);
         if (priceChanged(expectedUnitPrice, unitPrice)) {
             return rejectAtPrice(tx, player, shop, listing, TransactionType.SELL, amount,
                     TransactionFailure.PRICE_CHANGED,
@@ -428,9 +435,10 @@ public final class TransactionService {
         }
     }
 
-    private TransactionResult safetyStopped(UUID tx, Shop shop, ShopListing listing, TransactionType type, int amount) {
+    private TransactionResult safetyStopped(UUID tx, Player player, Shop shop, ShopListing listing,
+                                            TransactionType type, int amount) {
         int stock = stocks.getStock(shop.id(), listing.id());
-        double unitPrice = quote(shop, listing, stock, type);
+        double unitPrice = quote(player, shop, listing, stock, type);
         double total = safeTotal(unitPrice, amount);
         if (!Double.isFinite(total) || amount <= 0 || total < 0) {
             total = 0.0D;
@@ -442,7 +450,7 @@ public final class TransactionService {
     private TransactionResult reject(UUID tx, Player player, Shop shop, ShopListing listing, TransactionType type,
                                      int amount, TransactionFailure failure, String detail) {
         int stock = stocks.getStock(shop.id(), listing.id());
-        double unitPrice = quote(shop, listing, stock, type);
+        double unitPrice = quote(player, shop, listing, stock, type);
         return rejectAtPrice(tx, player, shop, listing, type, amount, failure, detail, stock, unitPrice);
     }
 
@@ -475,11 +483,17 @@ public final class TransactionService {
         return result;
     }
 
-    private double quote(Shop shop, ShopListing listing, int stock, TransactionType type) {
+    private double quote(Player player, Shop shop, ShopListing listing, int stock, TransactionType type) {
+        double marketPrice;
         if (pricing == null) {
-            return type == TransactionType.BUY ? listing.buyPrice() : listing.sellPrice();
+            marketPrice = type == TransactionType.BUY ? listing.buyPrice() : listing.sellPrice();
+        } else {
+            marketPrice = pricing.quote(shop, listing, stock, type).effectivePrice();
         }
-        return pricing.quote(shop, listing, stock, type).effectivePrice();
+        if (type == TransactionType.BUY && player != null) {
+            return PlayerDiscountService.applyCurrentBuyDiscount(player.getUniqueId(), shop.id(), marketPrice);
+        }
+        return marketPrice;
     }
 
     private String pricingDetail(Shop shop, ShopListing listing, double unitPrice) {
