@@ -1,5 +1,5 @@
 name: CdrVephilimEconomy
-version: '1.0.0-RC1'
+version: '1.0.0-RC2'
 main: id.cdr.vephilimeconomy.CdrVephilimEconomy
 api-version: '1.21.11'
 authors: [MenkiPlugcore]
@@ -9,8 +9,8 @@ depend: [Citizens, Vault]
 
 commands:
   cve:
-    description: Administrative, market pricing, RP market events, and economy governance command for CdrVephilimEconomy.
-    usage: /cve <reload|status|doctor|safety|shop|governance|pricing|market>
+    description: Administrative, shop discount, market pricing, RP market events, and economy governance command for CdrVephilimEconomy.
+    usage: /cve <reload|status|doctor|safety|shop|discount|governance|pricing|market>
     aliases: [veconomy]
 
 permissions:
@@ -28,6 +28,8 @@ permissions:
       cdrvephilimeconomy.shop.price: true
       cdrvephilimeconomy.shop.stock: true
       cdrvephilimeconomy.shop.manager: true
+      cdrvephilimeconomy.discount.view: true
+      cdrvephilimeconomy.discount.manage: true
       cdrvephilimeconomy.governance.view: true
       cdrvephilimeconomy.governance.approve: true
       cdrvephilimeconomy.governance.admin: true
@@ -66,6 +68,13 @@ permissions:
   cdrvephilimeconomy.shop.manager:
     description: Set shop responsibility metadata.
     default: false
+
+  cdrvephilimeconomy.discount.view:
+    description: View per-player BUY discount status and assignments.
+    default: false
+  cdrvephilimeconomy.discount.manage:
+    description: Set, remove, clear, and reload per-player BUY discounts.
+    default: op
 
   cdrvephilimeconomy.governance.view:
     description: View economy governance assignments and approval evidence.
