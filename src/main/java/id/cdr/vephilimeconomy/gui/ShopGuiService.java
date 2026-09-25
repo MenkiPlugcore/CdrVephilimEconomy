@@ -1,5 +1,6 @@
 package id.cdr.vephilimeconomy.gui;
 
+import id.cdr.vephilimeconomy.discount.PlayerDiscountService;
 import id.cdr.vephilimeconomy.economy.EconomyBridge;
 import id.cdr.vephilimeconomy.pricing.DynamicPricingService;
 import id.cdr.vephilimeconomy.shop.Shop;
@@ -90,7 +91,10 @@ public final class ShopGuiService {
         DynamicPricingService.PriceQuote sellQuote = pricing == null
                 ? null
                 : pricing.quote(shop, listing, stock, TransactionType.SELL);
-        double buyPrice = buyQuote == null ? listing.buyPrice() : buyQuote.effectivePrice();
+
+        double marketBuyPrice = buyQuote == null ? listing.buyPrice() : buyQuote.effectivePrice();
+        double personalDiscount = PlayerDiscountService.currentPercent(player.getUniqueId(), shop.id());
+        double buyPrice = PlayerDiscountService.applyCurrentBuyDiscount(player.getUniqueId(), shop.id(), marketBuyPrice);
         double sellPrice = sellQuote == null ? listing.sellPrice() : sellQuote.effectivePrice();
 
         meta.getPersistentDataContainer().set(buyQuoteKey, PersistentDataType.DOUBLE, buyPrice);
@@ -108,10 +112,22 @@ public final class ShopGuiService {
             lore.add(miniMessage.deserialize("<gray>Pasar dinamis: <yellow>" + sign + percent
                     + "%</yellow> <dark_gray>(sampel stok " + Math.round(marketQuote.stockRatio() * 100.0D) + "%)</dark_gray></gray>"));
         }
+
+        if (listing.mode().canBuy() && personalDiscount > 0.0D) {
+            lore.add(miniMessage.deserialize("<gray>Diskon pribadi: <green>-" + formatPercent(personalDiscount)
+                    + "%</green></gray>"));
+            lore.add(miniMessage.deserialize("<gray>Harga sebelum diskon: <white>"
+                    + escapeMini(economy.format(marketBuyPrice)) + "</white></gray>"));
+        }
         lore.add(Component.empty());
 
         if (listing.mode().canBuy()) {
-            String label = buyQuote != null && buyQuote.dynamic() ? "Harga beli dinamis" : "Harga beli";
+            String label;
+            if (personalDiscount > 0.0D) {
+                label = "Harga beli kamu";
+            } else {
+                label = buyQuote != null && buyQuote.dynamic() ? "Harga beli dinamis" : "Harga beli";
+            }
             lore.add(miniMessage.deserialize("<green>" + label + ": <gold>"
                     + escapeMini(economy.format(buyPrice)) + "</gold></green>"));
             if (stock <= 0) {
@@ -155,6 +171,13 @@ public final class ShopGuiService {
             builder.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
         }
         return builder.toString();
+    }
+
+    private static String formatPercent(double value) {
+        if (Math.rint(value) == value) {
+            return Long.toString(Math.round(value));
+        }
+        return Double.toString(value);
     }
 
     private static String escapeMini(String value) {
