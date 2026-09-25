@@ -2,6 +2,7 @@ package id.cdr.vephilimeconomy.market;
 
 import id.cdr.vephilimeconomy.CdrVephilimEconomy;
 import id.cdr.vephilimeconomy.admin.AdminAuditService;
+import id.cdr.vephilimeconomy.admin.AdminShopGuiEditor;
 import id.cdr.vephilimeconomy.discount.PlayerDiscountCommandListener;
 import id.cdr.vephilimeconomy.discount.PlayerDiscountService;
 import id.cdr.vephilimeconomy.license.LicenseIntegrityGuard;
@@ -16,8 +17,8 @@ import java.util.WeakHashMap;
  *
  * <p>Dynamic pricing and transaction listeners are rebuilt by /cve reload, but
  * the license monitor, supply command interceptor, personal-discount commands,
- * and natural-expiry lifecycle driver must only be registered once for the
- * lifetime of the plugin instance.</p>
+ * in-game shop editor, and natural-expiry lifecycle driver must only be registered
+ * once for the lifetime of the plugin instance.</p>
  */
 public final class MarketRuntimeBootstrap {
     private static final Set<CdrVephilimEconomy> STARTED =
@@ -35,9 +36,6 @@ public final class MarketRuntimeBootstrap {
             return true;
         }
 
-        // Same local tamper contract used by CdrKnockout:
-        // first legitimate start generates plugins/CdrVephilimEconomy/LICENSE.txt;
-        // later deletion/modification fails startup, and online tampering disables the plugin.
         LicenseIntegrityGuard licenseGuard = new LicenseIntegrityGuard(plugin);
         try {
             licenseGuard.initializeOrThrow();
@@ -50,6 +48,7 @@ public final class MarketRuntimeBootstrap {
 
         MarketSupplyCommandListener supplyListener = null;
         PlayerDiscountCommandListener discountListener = null;
+        AdminShopGuiEditor shopEditor = null;
         try {
             supplyListener = new MarketSupplyCommandListener(plugin, audit);
             plugin.getServer().getPluginManager().registerEvents(supplyListener, plugin);
@@ -58,10 +57,13 @@ public final class MarketRuntimeBootstrap {
             discountListener = new PlayerDiscountCommandListener(plugin, discountService);
             plugin.getServer().getPluginManager().registerEvents(discountListener, plugin);
 
+            shopEditor = new AdminShopGuiEditor(plugin);
+            plugin.getServer().getPluginManager().registerEvents(shopEditor, plugin);
+
             MarketEventLifecycleService lifecycle = new MarketEventLifecycleService(plugin, audit);
             lifecycle.start();
 
-            plugin.getLogger().info("Production runtime bootstrap active: licenseGuard=1, supplyListener=1, discountListener=1, expiryLifecycle=1.");
+            plugin.getLogger().info("Production runtime bootstrap active: licenseGuard=1, supplyListener=1, discountListener=1, shopEditor=1, expiryLifecycle=1.");
             return true;
         } catch (RuntimeException exception) {
             if (supplyListener != null) {
@@ -69,6 +71,9 @@ public final class MarketRuntimeBootstrap {
             }
             if (discountListener != null) {
                 HandlerList.unregisterAll(discountListener);
+            }
+            if (shopEditor != null) {
+                HandlerList.unregisterAll(shopEditor);
             }
             licenseGuard.stopMonitoring();
             STARTED.remove(plugin);
