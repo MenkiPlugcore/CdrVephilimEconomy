@@ -2,6 +2,8 @@ package id.cdr.vephilimeconomy.market;
 
 import id.cdr.vephilimeconomy.CdrVephilimEconomy;
 import id.cdr.vephilimeconomy.admin.AdminAuditService;
+import id.cdr.vephilimeconomy.discount.PlayerDiscountCommandListener;
+import id.cdr.vephilimeconomy.discount.PlayerDiscountService;
 import id.cdr.vephilimeconomy.license.LicenseIntegrityGuard;
 import org.bukkit.event.HandlerList;
 
@@ -13,8 +15,9 @@ import java.util.WeakHashMap;
  * Owns non-reloadable production hooks for one plugin instance.
  *
  * <p>Dynamic pricing and transaction listeners are rebuilt by /cve reload, but
- * the license monitor, supply command interceptor, and natural-expiry lifecycle
- * driver must only be registered once for the lifetime of the plugin instance.</p>
+ * the license monitor, supply command interceptor, personal-discount commands,
+ * and natural-expiry lifecycle driver must only be registered once for the
+ * lifetime of the plugin instance.</p>
  */
 public final class MarketRuntimeBootstrap {
     private static final Set<CdrVephilimEconomy> STARTED =
@@ -46,18 +49,26 @@ public final class MarketRuntimeBootstrap {
         }
 
         MarketSupplyCommandListener supplyListener = null;
+        PlayerDiscountCommandListener discountListener = null;
         try {
             supplyListener = new MarketSupplyCommandListener(plugin, audit);
             plugin.getServer().getPluginManager().registerEvents(supplyListener, plugin);
 
+            PlayerDiscountService discountService = PlayerDiscountService.install(plugin, audit);
+            discountListener = new PlayerDiscountCommandListener(plugin, discountService);
+            plugin.getServer().getPluginManager().registerEvents(discountListener, plugin);
+
             MarketEventLifecycleService lifecycle = new MarketEventLifecycleService(plugin, audit);
             lifecycle.start();
 
-            plugin.getLogger().info("Production runtime bootstrap active: licenseGuard=1, supplyListener=1, expiryLifecycle=1.");
+            plugin.getLogger().info("Production runtime bootstrap active: licenseGuard=1, supplyListener=1, discountListener=1, expiryLifecycle=1.");
             return true;
         } catch (RuntimeException exception) {
             if (supplyListener != null) {
                 HandlerList.unregisterAll(supplyListener);
+            }
+            if (discountListener != null) {
+                HandlerList.unregisterAll(discountListener);
             }
             licenseGuard.stopMonitoring();
             STARTED.remove(plugin);
