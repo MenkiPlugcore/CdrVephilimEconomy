@@ -9,7 +9,7 @@ depend: [Citizens, Vault]
 
 commands:
   cve:
-    description: Administrative, shop discount, in-game shop editor, market pricing, RP market events, and economy governance command for CdrVephilimEconomy.
+    description: Administrative, shop discount, GUI shop editor, market pricing, RP market events, and economy governance command for CdrVephilimEconomy.
     usage: /cve <reload|status|doctor|safety|shop|discount|governance|pricing|market>
     aliases: [veconomy]
 
