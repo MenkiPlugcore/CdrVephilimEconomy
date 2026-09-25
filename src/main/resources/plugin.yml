@@ -1,5 +1,5 @@
 name: CdrVephilimEconomy
-version: '1.0.0-RC2'
+version: '1.0.0-RC3'
 main: id.cdr.vephilimeconomy.CdrVephilimEconomy
 api-version: '1.21.11'
 authors: [MenkiPlugcore]
@@ -9,7 +9,7 @@ depend: [Citizens, Vault]
 
 commands:
   cve:
-    description: Administrative, shop discount, market pricing, RP market events, and economy governance command for CdrVephilimEconomy.
+    description: Administrative, shop discount, in-game shop editor, market pricing, RP market events, and economy governance command for CdrVephilimEconomy.
     usage: /cve <reload|status|doctor|safety|shop|discount|governance|pricing|market>
     aliases: [veconomy]
 
@@ -57,7 +57,7 @@ permissions:
     description: Edit shop display name and inventory size.
     default: false
   cdrvephilimeconomy.shop.item:
-    description: Add, remove, move, and change listing modes.
+    description: Add, remove, move, change listing modes, and use the in-game product editor GUI.
     default: false
   cdrvephilimeconomy.shop.price:
     description: Change listing buy and sell base prices.
