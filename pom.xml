@@ -6,7 +6,7 @@
 
     <groupId>id.cdr</groupId>
     <artifactId>CdrVephilimEconomy</artifactId>
-    <version>1.0.0-RC3</version>
+    <version>1.0.0-RC4</version>
     <name>CdrVephilimEconomy</name>
     <description>NPC-first economy plugin for Vephilim Roleplay.</description>
 
