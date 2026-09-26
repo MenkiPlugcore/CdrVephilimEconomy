@@ -1,5 +1,5 @@
 name: CdrVephilimEconomy
-version: '1.0.0-RC3'
+version: '1.0.0-RC4'
 main: id.cdr.vephilimeconomy.CdrVephilimEconomy
 api-version: '1.21.11'
 authors: [MenkiPlugcore]
@@ -9,7 +9,7 @@ depend: [Citizens, Vault]
 
 commands:
   cve:
-    description: Administrative, shop discount, GUI shop editor, market pricing, RP market events, and economy governance command for CdrVephilimEconomy.
+    description: Administrative, shop discount, GUI shop/category editor, Citizens binding, market pricing, RP market events, and economy governance command for CdrVephilimEconomy.
     usage: /cve <reload|status|doctor|safety|shop|discount|governance|pricing|market>
     aliases: [veconomy]
 
@@ -39,16 +39,16 @@ permissions:
       cdrvephilimeconomy.market.manage: true
 
   cdrvephilimeconomy.shop.view:
-    description: View shop list, details, schema, and validation status.
+    description: View shop list, details, schema, validation status, and the in-game category dashboard.
     default: false
   cdrvephilimeconomy.shop.create:
-    description: Create shops.
+    description: Create shops, including categories from the in-game Shop Editor wizard.
     default: false
   cdrvephilimeconomy.shop.delete:
     description: Delete shops.
     default: false
   cdrvephilimeconomy.shop.bind:
-    description: Bind or unbind Citizens NPCs to shops.
+    description: Bind, rebind, or unbind Citizens NPCs from the in-game Shop Editor.
     default: false
   cdrvephilimeconomy.shop.toggle:
     description: Enable or disable shops.
