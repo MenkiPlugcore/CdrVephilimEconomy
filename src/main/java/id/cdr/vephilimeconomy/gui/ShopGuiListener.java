@@ -9,15 +9,14 @@ import id.cdr.vephilimeconomy.transaction.TransactionFailure;
 import id.cdr.vephilimeconomy.transaction.TransactionResult;
 import id.cdr.vephilimeconomy.transaction.TransactionService;
 import id.cdr.vephilimeconomy.transaction.TransactionType;
+import id.cdr.vephilimeconomy.util.InventoryUtil;
 import net.citizensnpcs.api.CitizensAPI;
 import net.citizensnpcs.api.npc.NPC;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Location;
-import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
-import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.inventory.Inventory;
@@ -33,18 +32,16 @@ public final class ShopGuiListener implements Listener {
     private final TransactionService transactions;
     private final EconomyBridge economy;
     private final MiniMessage miniMessage = MiniMessage.miniMessage();
-    private final int bulkAmount;
     private final double maxNpcDistanceSquared;
 
     public ShopGuiListener(JavaPlugin plugin, ShopRegistry registry, ShopGuiService gui,
                            TransactionService transactions, EconomyBridge economy,
-                           int bulkAmount, double maxNpcDistance) {
+                           double maxNpcDistance) {
         this.plugin = plugin;
         this.registry = registry;
         this.gui = gui;
         this.transactions = transactions;
         this.economy = economy;
-        this.bulkAmount = Math.max(1, bulkAmount);
         double normalizedDistance = Math.max(1.0D, Math.min(32.0D, maxNpcDistance));
         this.maxNpcDistanceSquared = normalizedDistance * normalizedDistance;
     }
@@ -52,60 +49,119 @@ public final class ShopGuiListener implements Listener {
     @EventHandler
     public void onClick(InventoryClickEvent event) {
         Inventory top = event.getView().getTopInventory();
-        if (!(top.getHolder() instanceof ShopInventoryHolder holder)) {
-            return;
-        }
-
-        event.setCancelled(true);
         if (!(event.getWhoClicked() instanceof Player player)) {
             return;
         }
-        if (event.getClickedInventory() == null || event.getClickedInventory() != top) {
+
+        if (top.getHolder() instanceof ShopInventoryHolder holder) {
+            event.setCancelled(true);
+            if (event.getClickedInventory() == null || event.getClickedInventory() != top) {
+                return;
+            }
+            handleCatalogClick(player, holder, event.getRawSlot());
             return;
         }
 
-        Shop shop = registry.findById(holder.shopId()).orElse(null);
-        if (shop == null || !shop.enabled()) {
-            player.closeInventory();
+        if (top.getHolder() instanceof ShopTransactionHolder holder) {
+            event.setCancelled(true);
+            if (event.getClickedInventory() == null || event.getClickedInventory() != top) {
+                return;
+            }
+            handleTransactionClick(player, holder, event.getRawSlot(), event.getCurrentItem());
+        }
+    }
+
+    @EventHandler
+    public void onDrag(InventoryDragEvent event) {
+        Inventory top = event.getView().getTopInventory();
+        if (top.getHolder() instanceof ShopInventoryHolder || top.getHolder() instanceof ShopTransactionHolder) {
+            event.setCancelled(true);
+        }
+    }
+
+    private void handleCatalogClick(Player player, ShopInventoryHolder holder, int rawSlot) {
+        Shop shop = validShop(player, holder.shopId());
+        if (shop == null) {
             return;
         }
-
-        if (!isNearBoundNpc(player, shop)) {
-            player.closeInventory();
-            sendConfigured(player, "messages.too-far", "<red>Kamu terlalu jauh dari pedagang.</red>");
-            return;
-        }
-
-        ShopListing listing = shop.listingBySlot(event.getRawSlot());
+        ShopListing listing = shop.listingBySlot(rawSlot);
         if (listing == null) {
             return;
         }
+        gui.openTransactionMenu(player, shop, listing);
+    }
 
-        TransactionType type;
-        int amount;
-        ClickType click = event.getClick();
-        if (click == ClickType.LEFT) {
-            type = TransactionType.BUY;
-            amount = 1;
-        } else if (click == ClickType.SHIFT_LEFT) {
-            type = TransactionType.BUY;
-            amount = bulkAmount;
-        } else if (click == ClickType.RIGHT) {
-            type = TransactionType.SELL;
-            amount = 1;
-        } else if (click == ClickType.SHIFT_RIGHT) {
-            type = TransactionType.SELL;
-            amount = bulkAmount;
-        } else {
+    private void handleTransactionClick(Player player, ShopTransactionHolder holder,
+                                        int rawSlot, ItemStack clicked) {
+        Shop shop = validShop(player, holder.shopId());
+        if (shop == null) {
+            return;
+        }
+        ShopListing listing = shop.listings().get(holder.listingId());
+        if (listing == null) {
+            player.closeInventory();
             return;
         }
 
-        ItemStack clicked = event.getCurrentItem();
+        if (rawSlot == 26) {
+            gui.open(player, shop);
+            return;
+        }
+
+        if (rawSlot >= 10 && rawSlot <= 13 && listing.mode().canBuy()) {
+            int amount = switch (rawSlot) {
+                case 10 -> 1;
+                case 11 -> 16;
+                case 12 -> 32;
+                case 13 -> 64;
+                default -> 0;
+            };
+            if (amount <= 0 || amount > gui.maxAmount()) {
+                return;
+            }
+            execute(player, shop, listing, TransactionType.BUY, amount, clicked);
+            return;
+        }
+
+        if (rawSlot == 19 && listing.mode().canSell()) {
+            int stock = gui.stock(shop, listing);
+            int capacity = Math.max(0, listing.maxStock() - stock);
+            int held = ShopGuiService.sellableHeldAmount(player, listing);
+            int amount = Math.min(Math.min(held, capacity), gui.maxAmount());
+            if (amount <= 0) {
+                sendConfigured(player, capacity <= 0 ? "messages.max-stock" : "messages.insufficient-items",
+                        capacity <= 0
+                                ? "<yellow>Stok pedagang sudah penuh.</yellow>"
+                                : "<red>Tidak ada item valid di tangan untuk dijual.</red>");
+                return;
+            }
+            execute(player, shop, listing, TransactionType.SELL, amount, clicked);
+            return;
+        }
+
+        if (rawSlot == 21 && listing.mode().canSell()) {
+            int stock = gui.stock(shop, listing);
+            int capacity = Math.max(0, listing.maxStock() - stock);
+            int owned = InventoryUtil.countPlain(player.getInventory(), listing.material());
+            int amount = Math.min(Math.min(owned, capacity), gui.maxAmount());
+            if (amount <= 0) {
+                sendConfigured(player, capacity <= 0 ? "messages.max-stock" : "messages.insufficient-items",
+                        capacity <= 0
+                                ? "<yellow>Stok pedagang sudah penuh.</yellow>"
+                                : "<red>Kamu tidak punya item yang dapat dijual.</red>");
+                return;
+            }
+            execute(player, shop, listing, TransactionType.SELL, amount, clicked);
+        }
+    }
+
+    private void execute(Player player, Shop shop, ShopListing listing,
+                         TransactionType type, int amount, ItemStack clicked) {
         double displayedPrice = gui.displayedPrice(clicked, type);
         if (!Double.isFinite(displayedPrice)) {
             sendConfigured(player, "messages.price-changed",
-                    "<yellow>Harga pasar perlu diperbarui. Silakan klik lagi.</yellow>");
-            refreshOrClose(player, shop);
+                    "<yellow>Harga pasar perlu diperbarui. Silakan pilih lagi.</yellow>");
+            refreshTransactionOrClose(player, shop, listing);
             return;
         }
 
@@ -132,22 +188,28 @@ public final class ShopGuiListener implements Listener {
         }
 
         if (result.success() || result.failure() == TransactionFailure.PRICE_CHANGED) {
-            refreshOrClose(player, shop);
+            refreshTransactionOrClose(player, shop, listing);
         }
     }
 
-    @EventHandler
-    public void onDrag(InventoryDragEvent event) {
-        Inventory top = event.getView().getTopInventory();
-        if (top.getHolder() instanceof ShopInventoryHolder) {
-            event.setCancelled(true);
+    private Shop validShop(Player player, String shopId) {
+        Shop shop = registry.findById(shopId).orElse(null);
+        if (shop == null || !shop.enabled()) {
+            player.closeInventory();
+            return null;
         }
+        if (!isNearBoundNpc(player, shop)) {
+            player.closeInventory();
+            sendConfigured(player, "messages.too-far", "<red>Kamu terlalu jauh dari pedagang.</red>");
+            return null;
+        }
+        return shop;
     }
 
-    private void refreshOrClose(Player player, Shop shop) {
+    private void refreshTransactionOrClose(Player player, Shop shop, ShopListing listing) {
         plugin.getServer().getScheduler().runTask(plugin, () -> {
             if (player.isOnline() && isNearBoundNpc(player, shop)) {
-                gui.open(player, shop);
+                gui.openTransactionMenu(player, shop, listing);
             } else if (player.isOnline()) {
                 player.closeInventory();
             }
@@ -180,12 +242,11 @@ public final class ShopGuiListener implements Listener {
             String key = type == TransactionType.BUY ? "messages.buy-success" : "messages.sell-success";
             message = plugin.getConfig().getString(key, "<green>Transaksi berhasil.</green>")
                     .replace("{amount}", Integer.toString(result.amount()))
-                    .replace("{item}", prettyName(listing.material()))
+                    .replace("{item}", prettyName(listing))
                     .replace("{total}", escapeMini(economy.format(result.total())));
         } else {
             message = plugin.getConfig().getString(messagePath(result.failure()), "<red>Transaksi tidak dapat dilakukan.</red>");
         }
-
         sendRaw(player, message);
     }
 
@@ -213,8 +274,8 @@ public final class ShopGuiListener implements Listener {
         };
     }
 
-    private static String prettyName(Material material) {
-        String[] words = material.name().toLowerCase(Locale.ROOT).split("_");
+    private static String prettyName(ShopListing listing) {
+        String[] words = listing.material().name().toLowerCase(Locale.ROOT).split("_");
         StringBuilder builder = new StringBuilder();
         for (String word : words) {
             if (!builder.isEmpty()) {
