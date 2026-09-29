@@ -31,24 +31,25 @@ public final class ShopRegistry {
         rejectedDefinitions = 0;
         configurationWarnings = 0;
 
+        File source = resolveSource(file, logger);
         YamlConfiguration yaml = new YamlConfiguration();
         try {
-            yaml.load(file);
+            yaml.load(source);
         } catch (InvalidConfigurationException exception) {
-            throw new IOException("Invalid YAML in shops.yml: " + exception.getMessage(), exception);
+            throw new IOException("Invalid YAML in " + source.getName() + ": " + exception.getMessage(), exception);
         }
 
         int schema = ShopsSchemaManager.detectSchema(yaml);
         ShopsSchemaManager.validateSupported(schema);
         if (schema < ShopsSchemaManager.CURRENT_SCHEMA && logger != null) {
-            logger.warning("shops.yml masih memakai legacy schema v" + schema
-                    + "; ShopAdminService akan memigrasikan file ke v" + ShopsSchemaManager.CURRENT_SCHEMA
-                    + " dengan backup sebelum perubahan administratif berikutnya.");
+            logger.warning(source.getName() + " masih memakai legacy schema v" + schema
+                    + "; ShopAdminService akan memigrasikan ke v" + ShopsSchemaManager.CURRENT_SCHEMA
+                    + " sebelum perubahan administratif berikutnya.");
         }
 
         ConfigurationSection root = yaml.getConfigurationSection("shops");
         if (root == null) {
-            throw new IOException("shops.yml tidak memiliki section 'shops'.");
+            throw new IOException(source.getName() + " tidak memiliki section 'shops'.");
         }
 
         for (String rawShopId : root.getKeys(false)) {
@@ -76,21 +77,42 @@ public final class ShopRegistry {
                 shopsById.put(shop.id(), shop);
                 if (shop.enabled() && shop.npcId() >= 0) {
                     shopsByNpcId.put(shop.npcId(), shop);
-                } else if (shop.enabled()) {
+                } else if (shop.enabled() && logger != null) {
                     logger.warning("Shop '" + shop.id() + "' enabled tetapi npc-id belum valid. Shop tidak dibind ke NPC.");
                 }
 
                 emitModeWarnings(shop, logger);
             } catch (RuntimeException exception) {
                 rejectedDefinitions++;
-                logger.severe("Shop '" + rawShopId + "' ditolak: " + exception.getMessage());
+                if (logger != null) {
+                    logger.severe("Shop '" + rawShopId + "' ditolak: " + exception.getMessage());
+                }
             }
         }
 
-        logger.info("Loaded " + shopCount() + " shop definition(s), "
-                + activeBindingCount() + " active NPC binding(s), "
-                + rejectedDefinitions + " rejected definition(s), "
-                + configurationWarnings + " configuration warning(s), schema=v" + schema + ".");
+        if (logger != null) {
+            logger.info("Loaded " + shopCount() + " shop definition(s), "
+                    + activeBindingCount() + " active NPC binding(s), "
+                    + rejectedDefinitions + " rejected definition(s), "
+                    + configurationWarnings + " configuration warning(s), schema=v" + schema
+                    + ", source=" + source.getName() + ".");
+        }
+    }
+
+    private static File resolveSource(File requested, Logger logger) throws IOException {
+        if (requested == null) {
+            throw new IOException("Shop source file null.");
+        }
+        if (!"shops.yml".equalsIgnoreCase(requested.getName())) {
+            return requested;
+        }
+        File parent = requested.getParentFile();
+        if (parent == null) {
+            return requested;
+        }
+        ShopDirectoryStorage split = new ShopDirectoryStorage(parent, logger);
+        split.ensureInitialized();
+        return split.aggregateFile();
     }
 
     private Shop parseShop(String shopId, ConfigurationSection section) {
@@ -195,15 +217,19 @@ public final class ShopRegistry {
         for (ShopListing listing : shop.listings().values()) {
             if (!listing.mode().canBuy() && listing.buyPrice() > 0) {
                 configurationWarnings++;
-                logger.warning("Listing '" + shop.id() + "/" + listing.id() + "' memiliki buy-price="
-                        + listing.buyPrice() + " tetapi mode=" + listing.mode()
-                        + ". Harga beli diabaikan. Gunakan mode BUY_SELL atau BUY untuk mengaktifkan pembelian.");
+                if (logger != null) {
+                    logger.warning("Listing '" + shop.id() + "/" + listing.id() + "' memiliki buy-price="
+                            + listing.buyPrice() + " tetapi mode=" + listing.mode()
+                            + ". Harga beli diabaikan. Gunakan mode BUY_SELL atau BUY untuk mengaktifkan pembelian.");
+                }
             }
             if (!listing.mode().canSell() && listing.sellPrice() > 0) {
                 configurationWarnings++;
-                logger.warning("Listing '" + shop.id() + "/" + listing.id() + "' memiliki sell-price="
-                        + listing.sellPrice() + " tetapi mode=" + listing.mode()
-                        + ". Harga jual diabaikan. Gunakan mode BUY_SELL atau SELL untuk mengaktifkan penjualan.");
+                if (logger != null) {
+                    logger.warning("Listing '" + shop.id() + "/" + listing.id() + "' memiliki sell-price="
+                            + listing.sellPrice() + " tetapi mode=" + listing.mode()
+                            + ". Harga jual diabaikan. Gunakan mode BUY_SELL atau SELL untuk mengaktifkan penjualan.");
+                }
             }
         }
     }
