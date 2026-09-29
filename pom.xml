@@ -6,7 +6,7 @@
 
     <groupId>id.cdr</groupId>
     <artifactId>CdrVephilimEconomy</artifactId>
-    <version>1.0.0-RC4</version>
+    <version>1.0.0-RC5</version>
     <name>CdrVephilimEconomy</name>
     <description>NPC-first economy plugin for Vephilim Roleplay.</description>
 
@@ -15,6 +15,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <paper.version>1.21.11-R0.1-SNAPSHOT</paper.version>
         <citizens.version>2.0.43-SNAPSHOT</citizens.version>
+        <floodgate.version>2.2.5-SNAPSHOT</floodgate.version>
     </properties>
 
     <repositories>
@@ -25,6 +26,10 @@
         <repository>
             <id>citizens-repo</id>
             <url>https://maven.citizensnpcs.co/repo</url>
+        </repository>
+        <repository>
+            <id>opencollab</id>
+            <url>https://repo.opencollab.dev/main/</url>
         </repository>
         <repository>
             <id>jitpack.io</id>
@@ -58,6 +63,13 @@
             <groupId>com.github.MilkBowl</groupId>
             <artifactId>VaultAPI</artifactId>
             <version>1.7</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.geysermc.floodgate</groupId>
+            <artifactId>api</artifactId>
+            <version>${floodgate.version}</version>
             <scope>provided</scope>
         </dependency>
     </dependencies>
