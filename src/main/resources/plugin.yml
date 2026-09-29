@@ -1,15 +1,16 @@
 name: CdrVephilimEconomy
-version: '1.0.0-RC4'
+version: '1.0.0-RC5'
 main: id.cdr.vephilimeconomy.CdrVephilimEconomy
 api-version: '1.21.11'
 authors: [MenkiPlugcore]
-description: NPC-first economy for Vephilim Roleplay.
+description: Crossplay NPC-first economy for Vephilim Roleplay.
 website: https://github.com/MenkiPlugcore/CdrVephilimEconomy
 depend: [Citizens, Vault]
+softdepend: [floodgate]
 
 commands:
   cve:
-    description: Administrative, shop discount, GUI shop/category editor, Citizens binding, market pricing, RP market events, and economy governance command for CdrVephilimEconomy.
+    description: Administrative, crossplay shop, discount, GUI shop/category editor, Citizens binding, market pricing, RP market events, and economy governance command for CdrVephilimEconomy.
     usage: /cve <reload|status|doctor|safety|shop|discount|governance|pricing|market>
     aliases: [veconomy]
 
