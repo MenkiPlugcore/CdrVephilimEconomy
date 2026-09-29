@@ -32,7 +32,7 @@ public final class ShopGuiService {
     private final DynamicPricingService pricing;
     private final MiniMessage miniMessage = MiniMessage.miniMessage();
     private volatile int maxAmount;
-    private volatile BedrockShopFormService bedrockForms;
+    private volatile BedrockShopBridge bedrockForms;
     private final NamespacedKey buyQuoteKey;
     private final NamespacedKey sellQuoteKey;
 
@@ -50,12 +50,12 @@ public final class ShopGuiService {
         this.maxAmount = Math.max(1, Math.min(2304, amount));
     }
 
-    public void installBedrockForms(BedrockShopFormService service) {
+    public void installBedrockForms(BedrockShopBridge service) {
         this.bedrockForms = service;
     }
 
     public void openCrossplay(Player player, Shop shop) {
-        BedrockShopFormService forms = bedrockForms;
+        BedrockShopBridge forms = bedrockForms;
         if (forms != null && forms.openShopIfBedrock(player, shop)) {
             return;
         }
