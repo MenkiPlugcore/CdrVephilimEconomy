@@ -49,9 +49,17 @@ public final class ShopGuiListener implements Listener {
         int maxAmount = Math.max(1, Math.min(2304,
                 plugin.getConfig().getInt("transaction.max-amount", 64)));
         gui.configureMaxAmount(maxAmount);
-        if (plugin instanceof CdrVephilimEconomy cve) {
-            gui.installBedrockForms(new BedrockShopFormService(
-                    cve, gui, transactions, economy, maxNpcDistance));
+
+        if (plugin instanceof CdrVephilimEconomy cve
+                && plugin.getServer().getPluginManager().isPluginEnabled("floodgate")) {
+            try {
+                gui.installBedrockForms(new BedrockShopFormService(
+                        cve, gui, transactions, economy, maxNpcDistance));
+                plugin.getLogger().info("RC5 Bedrock native shop forms enabled via Floodgate.");
+            } catch (RuntimeException | LinkageError exception) {
+                plugin.getLogger().warning("Floodgate terdeteksi tetapi Bedrock forms tidak dapat diaktifkan; "
+                        + "fallback ke inventory GUI: " + exception.getMessage());
+            }
         }
     }
 
