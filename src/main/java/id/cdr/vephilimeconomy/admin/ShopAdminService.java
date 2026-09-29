@@ -3,6 +3,7 @@ package id.cdr.vephilimeconomy.admin;
 import id.cdr.vephilimeconomy.CdrVephilimEconomy;
 import id.cdr.vephilimeconomy.shop.ListingMode;
 import id.cdr.vephilimeconomy.shop.Shop;
+import id.cdr.vephilimeconomy.shop.ShopDirectoryStorage;
 import id.cdr.vephilimeconomy.shop.ShopListing;
 import id.cdr.vephilimeconomy.shop.ShopRegistry;
 import id.cdr.vephilimeconomy.shop.ShopsSchemaManager;
@@ -28,6 +29,7 @@ public final class ShopAdminService {
     private final StockRepository stocks;
     private final AdminAuditService audit;
     private final AdminMutationJournal mutationJournal;
+    private final ShopDirectoryStorage splitStorage;
     private final File shopsFile;
     private final File backupFile;
     private final File candidateFile;
@@ -37,11 +39,20 @@ public final class ShopAdminService {
         this.plugin = plugin;
         this.stocks = stocks;
         this.audit = audit;
-        this.shopsFile = new File(plugin.getDataFolder(), "shops.yml");
-        this.backupFile = new File(plugin.getDataFolder(), "shops.yml.admin.bak");
-        this.candidateFile = new File(plugin.getDataFolder(), "shops.yml.admin.candidate");
-        this.writeTempFile = new File(plugin.getDataFolder(), "shops.yml.admin.tmp");
+        this.splitStorage = new ShopDirectoryStorage(plugin.getDataFolder(), plugin.getLogger());
+        this.shopsFile = splitStorage.aggregateFile();
+        this.backupFile = new File(plugin.getDataFolder(), ".shops-aggregate.admin.bak");
+        this.candidateFile = new File(plugin.getDataFolder(), ".shops-aggregate.admin.candidate");
+        this.writeTempFile = new File(plugin.getDataFolder(), ".shops-aggregate.admin.tmp");
         this.mutationJournal = new AdminMutationJournal(plugin.getDataFolder(), plugin.getLogger());
+
+        try {
+            splitStorage.ensureInitialized();
+        } catch (IOException exception) {
+            mutationJournal.block("Split shop storage initialization gagal: " + exception.getMessage());
+            plugin.getLogger().severe("Shop management split storage tidak sehat: " + exception.getMessage());
+            return;
+        }
 
         AdminMutationJournal.RecoveryStatus recovery = mutationJournal.recover(shopsFile, backupFile);
         if (!recovery.healthy()) {
@@ -56,30 +67,28 @@ public final class ShopAdminService {
         }
 
         try {
-            ShopsSchemaManager.SchemaStatus status = ShopsSchemaManager.ensureCurrent(shopsFile, plugin.getLogger());
-            if (status.migrated()) {
-                try {
-                    audit.record("SYSTEM", "SHOPS_SCHEMA_MIGRATION_SUCCESS", status.detail());
-                } catch (IOException exception) {
-                    plugin.getLogger().warning("Schema migration sukses tetapi admin audit migration gagal ditulis: "
-                            + exception.getMessage());
-                }
+            splitStorage.rebuildAggregateFromDirectory();
+            ShopsSchemaManager.SchemaStatus status = ShopsSchemaManager.inspect(shopsFile);
+            if (!status.current()) {
+                mutationJournal.block("Internal split aggregate memakai schema legacy v" + status.schema() + ".");
             }
         } catch (IOException exception) {
-            plugin.getLogger().severe("Shop management schema initialization gagal: " + exception.getMessage());
-            plugin.getLogger().severe("Core transaction runtime tetap aktif, tetapi mutation beta.2 akan fail-closed sampai shops.yml diperbaiki.");
+            mutationJournal.block("Shop management split aggregate initialization gagal: " + exception.getMessage());
+            plugin.getLogger().severe("Shop management split aggregate initialization gagal: " + exception.getMessage());
         }
     }
 
     public Result schemaStatus() {
         try {
+            splitStorage.rebuildAggregateFromDirectory();
             ShopsSchemaManager.SchemaStatus status = ShopsSchemaManager.inspect(shopsFile);
-            return Result.ok("shops.yml schema=v" + status.schema() + "/v" + ShopsSchemaManager.CURRENT_SCHEMA
-                    + (status.current() ? " CURRENT" : " LEGACY; akan dimigrasikan sebelum mutation berikutnya")
-                    + "; schemaRecovery=" + (ShopsSchemaManager.hasPendingRecovery(shopsFile) ? "PENDING" : "OK")
+            return Result.ok("shop storage=" + splitStorage.statusSummary()
+                    + "; internalSchema=v" + status.schema() + "/v" + ShopsSchemaManager.CURRENT_SCHEMA
+                    + (status.current() ? " CURRENT" : " LEGACY")
                     + "; adminMutation=" + mutationJournal.statusSummary() + ".");
         } catch (IOException exception) {
             return Result.fail("Schema check gagal: " + exception.getMessage()
+                    + "; storage=" + splitStorage.statusSummary()
                     + "; adminMutation=" + mutationJournal.statusSummary() + ".");
         }
     }
@@ -89,16 +98,17 @@ public final class ShopAdminService {
             return Result.fail("Admin mutation recovery belum sehat: " + mutationJournal.statusSummary());
         }
         try {
+            splitStorage.rebuildAggregateFromDirectory();
             ShopsSchemaManager.SchemaStatus schema = ShopsSchemaManager.inspect(shopsFile);
             ShopRegistry candidate = new ShopRegistry();
             candidate.load(shopsFile, plugin.getLogger());
             if (candidate.rejectedDefinitionCount() > 0) {
-                return Result.fail("shops.yml ditolak: rejectedDefinitions=" + candidate.rejectedDefinitionCount() + ".");
+                return Result.fail("Split shop config ditolak: rejectedDefinitions=" + candidate.rejectedDefinitionCount() + ".");
             }
             return Result.ok("Valid: schema=v" + schema.schema() + ", shops=" + candidate.shopCount()
                     + ", listings=" + candidate.listingCount() + ", npcBindings=" + candidate.activeBindingCount()
                     + ", warnings=" + candidate.configurationWarningCount()
-                    + ", schemaRecovery=" + (ShopsSchemaManager.hasPendingRecovery(shopsFile) ? "PENDING" : "OK")
+                    + ", storage=" + splitStorage.statusSummary()
                     + ", adminMutation=" + mutationJournal.statusSummary() + ".");
         } catch (IOException exception) {
             return Result.fail("Validation gagal: " + exception.getMessage());
@@ -401,9 +411,13 @@ public final class ShopAdminService {
         }
 
         try {
-            ShopsSchemaManager.ensureCurrent(shopsFile, plugin.getLogger());
+            splitStorage.rebuildAggregateFromDirectory();
+            ShopsSchemaManager.SchemaStatus status = ShopsSchemaManager.inspect(shopsFile);
+            if (!status.current()) {
+                return Result.fail("Internal split aggregate masih schema legacy v" + status.schema() + ".");
+            }
         } catch (IOException exception) {
-            return Result.fail("Mutation diblokir karena schema shops.yml tidak sehat: " + exception.getMessage());
+            return Result.fail("Mutation diblokir karena split shop storage tidak sehat: " + exception.getMessage());
         }
 
         try {
@@ -433,13 +447,30 @@ public final class ShopAdminService {
             byte[] candidateBytes = Files.readAllBytes(writeTempFile.toPath());
             mutationJournal.begin(actor, action, detail, original, candidateBytes);
             moveReplace(writeTempFile, shopsFile);
-            mutationJournal.stage("LIVE_REPLACED");
+            splitStorage.applyAggregate(shopsFile);
+            mutationJournal.stage("SPLIT_LIVE_REPLACED");
         } catch (IOException exception) {
-            mutationJournal.block("Gagal menulis shops.yml pada mutation " + action + ": " + exception.getMessage());
+            boolean recovered = false;
+            String recovery = "";
+            try {
+                Files.write(shopsFile.toPath(), original);
+                splitStorage.rebuildAggregateFromDirectory();
+                recovered = true;
+                recovery = "split runtime source tetap/berhasil dipulihkan";
+            } catch (IOException recoveryFailure) {
+                recovery = "split recovery gagal: " + recoveryFailure.getMessage();
+            }
+            if (recovered) {
+                mutationJournal.complete("ROLLED_BACK_WRITE_FAILURE");
+            } else {
+                mutationJournal.block("Gagal menulis split shop mutation " + action + ": "
+                        + exception.getMessage() + "; " + recovery);
+            }
             cleanupTemps();
-            tryRecordFailure(actor, action + "_FAILED", detail + "; writeError=" + exception.getMessage());
-            return Result.fail("Gagal menulis shops.yml secara atomic. Mutation admin dikunci sampai recovery: "
-                    + exception.getMessage());
+            tryRecordFailure(actor, action + "_FAILED", detail + "; writeError=" + exception.getMessage()
+                    + "; recovery=" + recovery);
+            return Result.fail("Gagal menulis split shop secara atomic: " + exception.getMessage()
+                    + "; " + recovery + ".");
         }
 
         CdrVephilimEconomy.ReloadResult reload = plugin.reloadRuntime();
@@ -447,14 +478,16 @@ public final class ShopAdminService {
             String rollbackMessage;
             boolean rollbackHealthy = false;
             try {
+                splitStorage.rollbackMutation();
                 Files.write(shopsFile.toPath(), original);
+                splitStorage.rebuildAggregateFromDirectory();
                 CdrVephilimEconomy.ReloadResult rollbackReload = plugin.reloadRuntime();
                 rollbackHealthy = rollbackReload.success();
                 rollbackMessage = rollbackHealthy
-                        ? "runtime lama dipulihkan"
-                        : "rollback file berhasil tetapi reload rollback gagal: " + rollbackReload.message();
+                        ? "split category files dan runtime lama dipulihkan"
+                        : "split rollback berhasil tetapi reload rollback gagal: " + rollbackReload.message();
             } catch (IOException exception) {
-                rollbackMessage = "rollback file gagal: " + exception.getMessage();
+                rollbackMessage = "split rollback gagal: " + exception.getMessage();
             }
 
             if (rollbackHealthy) {
@@ -470,21 +503,34 @@ public final class ShopAdminService {
         }
 
         mutationJournal.stage("RUNTIME_RELOADED");
+        boolean auditWarning = false;
         try {
             audit.record(actor, action + "_SUCCESS", detail);
         } catch (IOException exception) {
+            auditWarning = true;
             plugin.getLogger().severe("Admin change sukses tetapi success audit gagal ditulis: " + exception.getMessage());
-            mutationJournal.complete("COMMITTED_AUDIT_WARNING");
-            cleanupTemps();
-            return Result.ok("Perubahan berhasil dan runtime direload, tetapi success-audit gagal ditulis; cek console.");
         }
 
-        mutationJournal.complete("COMMITTED");
+        try {
+            // Clear split pending first. If a crash happens before journal completion, the aggregate
+            // journal sees the live hash matching the candidate and safely recovers as COMMITTED.
+            splitStorage.completeMutation();
+        } catch (IOException exception) {
+            mutationJournal.block("Mutation runtime berhasil tetapi split pending marker tidak dapat diselesaikan: "
+                    + exception.getMessage());
+            cleanupTemps();
+            return Result.ok("Perubahan sudah aktif, tetapi split recovery marker gagal diselesaikan. "
+                    + "Mutation berikutnya dikunci; restart akan melakukan recovery fail-safe. Cek console.");
+        }
+
+        mutationJournal.complete(auditWarning ? "COMMITTED_AUDIT_WARNING" : "COMMITTED");
         cleanupTemps();
         if (mutationJournal.isBlocked()) {
             return Result.ok("Perubahan berhasil diterapkan, tetapi cleanup recovery journal gagal. Mutation admin berikutnya dikunci; cek console.");
         }
-        return Result.ok("Perubahan berhasil diterapkan dan runtime direload tanpa restart.");
+        return auditWarning
+                ? Result.ok("Perubahan berhasil dan runtime direload, tetapi success-audit gagal ditulis; cek console.")
+                : Result.ok("Perubahan berhasil diterapkan ke file kategori dan runtime direload tanpa restart.");
     }
 
     private void validateCandidate(YamlConfiguration yaml) throws IOException {
@@ -509,6 +555,9 @@ public final class ShopAdminService {
     }
 
     private YamlConfiguration loadStrict(File source) throws IOException {
+        if (!source.isFile()) {
+            throw new IOException(source.getName() + " tidak ditemukan.");
+        }
         YamlConfiguration yaml = new YamlConfiguration();
         try {
             yaml.load(source);
