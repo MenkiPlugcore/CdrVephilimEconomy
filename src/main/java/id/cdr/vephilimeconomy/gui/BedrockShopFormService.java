@@ -33,7 +33,7 @@ import java.util.WeakHashMap;
  * inventory UI. Bedrock players get touch-friendly forms with explicit buttons,
  * so no left/right/shift click semantics are required.</p>
  */
-public final class BedrockShopFormService {
+public final class BedrockShopFormService implements BedrockShopBridge {
     private static final int[] BUY_AMOUNTS = {1, 16, 32, 64};
     private static final Map<CdrVephilimEconomy, BedrockShopFormService> CURRENT =
             Collections.synchronizedMap(new WeakHashMap<>());
@@ -65,6 +65,7 @@ public final class BedrockShopFormService {
         }
     }
 
+    @Override
     public boolean openShopIfBedrock(Player player, Shop shop) {
         if (!isBedrock(player)) {
             return false;
@@ -85,6 +86,7 @@ public final class BedrockShopFormService {
         }
     }
 
+    @Override
     public void shutdown() {
         active = false;
     }
