@@ -77,6 +77,16 @@ public final class ShopDirectoryStorage {
                 throw new IOException("Split shop marker ada tetapi directory shops/ hilang. Recovery dihentikan fail-closed.");
             }
             rebuildAggregateFromDirectory();
+            // onEnable still seeds the bundled legacy resource for backwards compatibility.
+            // Once split storage is initialized it is not authoritative and is removed again
+            // so operators only see the per-category files they are expected to edit.
+            try {
+                Files.deleteIfExists(legacyFile.toPath());
+            } catch (IOException exception) {
+                if (logger != null) {
+                    logger.warning("Legacy shops.yml tidak dapat dibersihkan setelah split load: " + exception.getMessage());
+                }
+            }
             return;
         }
 
@@ -181,26 +191,40 @@ public final class ShopDirectoryStorage {
         }
         writeCategoryDirectory(root, tempDirectory);
         validateDirectory(tempDirectory);
+
+        // Remove the previous inspection backup before creating durable PREPARED evidence.
+        // If this cleanup fails, there is no pending marker to confuse next startup.
+        deleteRecursively(backupDirectory);
         writeSplitPendingMarker();
 
-        deleteRecursively(backupDirectory);
+        boolean liveMovedToBackup = false;
         try {
             moveDirectory(shopsDirectory, backupDirectory);
-            try {
-                moveDirectory(tempDirectory, shopsDirectory);
-            } catch (IOException candidateFailure) {
-                if (!shopsDirectory.exists() && backupDirectory.exists()) {
-                    moveDirectory(backupDirectory, shopsDirectory);
-                }
-                throw candidateFailure;
-            }
+            liveMovedToBackup = true;
+            moveDirectory(tempDirectory, shopsDirectory);
             rebuildAggregateFromDirectory();
         } catch (IOException exception) {
-            try {
-                rollbackMutation();
-            } catch (IOException rollbackFailure) {
-                throw new IOException("Split mutation gagal dan rollback juga gagal: "
-                        + exception.getMessage() + "; rollback=" + rollbackFailure.getMessage(), rollbackFailure);
+            if (liveMovedToBackup) {
+                try {
+                    deleteRecursively(shopsDirectory);
+                    if (backupDirectory.isDirectory()) {
+                        moveDirectory(backupDirectory, shopsDirectory);
+                    }
+                    Files.deleteIfExists(splitPendingMarker.toPath());
+                    deleteRecursively(tempDirectory);
+                    rebuildAggregateFromDirectory();
+                } catch (IOException rollbackFailure) {
+                    throw new IOException("Split mutation gagal dan rollback juga gagal: "
+                            + exception.getMessage() + "; rollback=" + rollbackFailure.getMessage(), rollbackFailure);
+                }
+            } else {
+                try {
+                    Files.deleteIfExists(splitPendingMarker.toPath());
+                    deleteRecursively(tempDirectory);
+                } catch (IOException cleanupFailure) {
+                    throw new IOException("Split mutation gagal sebelum backup dan cleanup pending juga gagal: "
+                            + exception.getMessage() + "; cleanup=" + cleanupFailure.getMessage(), cleanupFailure);
+                }
             }
             throw exception;
         }
