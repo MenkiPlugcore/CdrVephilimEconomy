@@ -15,12 +15,16 @@ import net.citizensnpcs.api.npc.NPC;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.ItemStack;
 import org.geysermc.cumulus.form.SimpleForm;
 import org.geysermc.cumulus.util.FormImage;
 import org.geysermc.floodgate.api.FloodgateApi;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.WeakHashMap;
 
 /**
  * Bedrock-native shop UI powered by Floodgate/Cumulus forms.
@@ -31,6 +35,8 @@ import java.util.Locale;
  */
 public final class BedrockShopFormService {
     private static final int[] BUY_AMOUNTS = {1, 16, 32, 64};
+    private static final Map<CdrVephilimEconomy, BedrockShopFormService> CURRENT =
+            Collections.synchronizedMap(new WeakHashMap<>());
 
     private final CdrVephilimEconomy plugin;
     private final ShopGuiService gui;
@@ -50,6 +56,13 @@ public final class BedrockShopFormService {
         this.economy = economy;
         double normalized = Math.max(1.0D, Math.min(32.0D, maxNpcDistance));
         this.maxNpcDistanceSquared = normalized * normalized;
+
+        synchronized (CURRENT) {
+            BedrockShopFormService previous = CURRENT.put(plugin, this);
+            if (previous != null && previous != this) {
+                previous.shutdown();
+            }
+        }
     }
 
     public boolean openShopIfBedrock(Player player, Shop shop) {
@@ -89,6 +102,7 @@ public final class BedrockShopFormService {
                 .title(stripFormatting(shop.displayName()))
                 .content("Saldo: " + economy.format(economy.balance(player))
                         + "\nPilih produk untuk membuka menu transaksi.");
+        List<Runnable> actions = new ArrayList<>();
 
         for (ShopListing listing : shop.listings().values()) {
             int stock = gui.stock(shop, listing);
@@ -100,12 +114,14 @@ public final class BedrockShopFormService {
             if (listing.mode().canSell()) {
                 text.append(" | Jual ").append(gui.formatMoney(gui.quoteUnitPrice(player, shop, listing, TransactionType.SELL)));
             }
-
-            form.button(text.toString(), FormImage.Type.PATH, materialIcon(listing),
-                    response -> runMain(() -> openTransaction(player, shop.id(), listing.id())));
+            String targetShop = shop.id();
+            String targetListing = listing.id();
+            addButton(form, actions, text.toString(), materialIcon(listing),
+                    () -> openTransaction(player, targetShop, targetListing));
         }
 
-        form.button("Tutup", FormImage.Type.PATH, "textures/ui/cancel");
+        addButton(form, actions, "Tutup", "textures/ui/cancel", () -> { });
+        attachHandler(form, actions);
         sendFormOrFallback(player, shop, form);
     }
 
@@ -144,6 +160,7 @@ public final class BedrockShopFormService {
         SimpleForm.Builder form = SimpleForm.builder()
                 .title(ShopGuiService.prettyName(listing.material().name()))
                 .content(content.toString());
+        List<Runnable> actions = new ArrayList<>();
 
         if (listing.mode().canBuy()) {
             for (int amount : BUY_AMOUNTS) {
@@ -151,10 +168,10 @@ public final class BedrockShopFormService {
                     continue;
                 }
                 double expected = buyPrice;
-                form.button("Beli " + amount + "\n" + gui.formatMoney(expected * amount),
-                        FormImage.Type.PATH, materialIcon(listing),
-                        response -> runMain(() -> execute(player, shopId, listingId,
-                                TransactionType.BUY, amount, expected)));
+                addButton(form, actions,
+                        "Beli " + amount + "\n" + gui.formatMoney(expected * amount),
+                        materialIcon(listing),
+                        () -> execute(player, shopId, listingId, TransactionType.BUY, amount, expected));
             }
         }
 
@@ -164,19 +181,20 @@ public final class BedrockShopFormService {
             int allAccepted = Math.min(Math.min(owned, capacity), gui.maxAmount());
             double expected = sellPrice;
 
-            form.button("Jual yang dipegang\n" + heldAccepted + " item • "
-                            + gui.formatMoney(expected * heldAccepted),
-                    FormImage.Type.PATH, "textures/ui/up_arrow",
-                    response -> runMain(() -> executeSellHeld(player, shopId, listingId, expected)));
+            addButton(form, actions,
+                    "Jual yang dipegang\n" + heldAccepted + " item • " + gui.formatMoney(expected * heldAccepted),
+                    "textures/ui/up_arrow",
+                    () -> executeSellHeld(player, shopId, listingId, expected));
 
-            form.button("Jual semua\n" + allAccepted + " item • "
-                            + gui.formatMoney(expected * allAccepted),
-                    FormImage.Type.PATH, "textures/ui/confirm",
-                    response -> runMain(() -> executeSellAll(player, shopId, listingId, expected)));
+            addButton(form, actions,
+                    "Jual semua\n" + allAccepted + " item • " + gui.formatMoney(expected * allAccepted),
+                    "textures/ui/confirm",
+                    () -> executeSellAll(player, shopId, listingId, expected));
         }
 
-        form.button("Kembali ke produk", FormImage.Type.PATH, "textures/ui/cancel",
-                response -> runMain(() -> openCatalog(player, shopId)));
+        addButton(form, actions, "Kembali ke produk", "textures/ui/cancel",
+                () -> openCatalog(player, shopId));
+        attachHandler(form, actions);
         sendFormOrFallback(player, shop, form);
     }
 
@@ -289,6 +307,22 @@ public final class BedrockShopFormService {
             plugin.getLogger().warning("Bedrock form error untuk " + player.getName() + ": " + exception.getMessage());
             gui.open(player, shop);
         }
+    }
+
+    private void attachHandler(SimpleForm.Builder form, List<Runnable> actions) {
+        form.validResultHandler(response -> {
+            int clicked = response.clickedButtonId();
+            if (clicked < 0 || clicked >= actions.size()) {
+                return;
+            }
+            runMain(actions.get(clicked));
+        });
+    }
+
+    private static void addButton(SimpleForm.Builder form, List<Runnable> actions,
+                                  String text, String iconPath, Runnable action) {
+        form.button(text, FormImage.Type.PATH, iconPath);
+        actions.add(action == null ? () -> { } : action);
     }
 
     private void runMain(Runnable action) {
