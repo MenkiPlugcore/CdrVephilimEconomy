@@ -31,18 +31,35 @@ public final class ShopGuiService {
     private final EconomyBridge economy;
     private final DynamicPricingService pricing;
     private final MiniMessage miniMessage = MiniMessage.miniMessage();
-    private final int maxAmount;
+    private volatile int maxAmount;
+    private volatile BedrockShopFormService bedrockForms;
     private final NamespacedKey buyQuoteKey;
     private final NamespacedKey sellQuoteKey;
 
     public ShopGuiService(JavaPlugin plugin, StockRepository stocks, EconomyBridge economy,
-                          DynamicPricingService pricing, int maxAmount) {
+                          DynamicPricingService pricing, int initialAmountLimit) {
         this.stocks = stocks;
         this.economy = economy;
         this.pricing = pricing;
-        this.maxAmount = Math.max(1, Math.min(2304, maxAmount));
+        this.maxAmount = Math.max(1, Math.min(2304, initialAmountLimit));
         this.buyQuoteKey = new NamespacedKey(plugin, "buy_quote");
         this.sellQuoteKey = new NamespacedKey(plugin, "sell_quote");
+    }
+
+    public void configureMaxAmount(int amount) {
+        this.maxAmount = Math.max(1, Math.min(2304, amount));
+    }
+
+    public void installBedrockForms(BedrockShopFormService service) {
+        this.bedrockForms = service;
+    }
+
+    public void openCrossplay(Player player, Shop shop) {
+        BedrockShopFormService forms = bedrockForms;
+        if (forms != null && forms.openShopIfBedrock(player, shop)) {
+            return;
+        }
+        open(player, shop);
     }
 
     public void open(Player player, Shop shop) {
