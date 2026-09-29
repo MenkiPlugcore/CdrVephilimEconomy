@@ -13,7 +13,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
+import java.util.Locale;
 import java.util.regex.Pattern;
 import java.util.logging.Logger;
 
@@ -105,7 +105,7 @@ public final class ShopDirectoryStorage {
             validateDirectory(tempDirectory);
 
             Files.copy(legacyFile.toPath(), legacyBackup.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            if (!Files.mismatch(legacyFile.toPath(), legacyBackup.toPath()).equals(-1L)) {
+            if (Files.mismatch(legacyFile.toPath(), legacyBackup.toPath()) != -1L) {
                 throw new IOException("Backup shops.yml legacy tidak identik dengan source.");
             }
 
@@ -144,6 +144,13 @@ public final class ShopDirectoryStorage {
             throw new IOException("Directory shops/ tidak ditemukan.");
         }
         buildAggregate(shopsDirectory, aggregateTemp);
+        ShopRegistry candidate = new ShopRegistry();
+        candidate.load(aggregateTemp, logger);
+        if (candidate.rejectedDefinitionCount() > 0) {
+            Files.deleteIfExists(aggregateTemp.toPath());
+            throw new IOException("Split shop directory ditolak: " + candidate.rejectedDefinitionCount()
+                    + " invalid definition(s).");
+        }
         moveReplace(aggregateTemp, aggregateFile);
     }
 
