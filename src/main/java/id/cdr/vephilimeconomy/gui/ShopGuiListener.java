@@ -70,28 +70,29 @@ public final class ShopGuiListener implements Listener {
             return;
         }
 
-        if (top.getHolder() instanceof ShopInventoryHolder holder) {
-            event.setCancelled(true);
-            if (event.getClickedInventory() == null || event.getClickedInventory() != top) {
-                return;
-            }
-            handleCatalogClick(player, holder, event.getRawSlot());
-            return;
-        }
-
+        // ShopTransactionHolder extends ShopInventoryHolder so it must be checked first.
         if (top.getHolder() instanceof ShopTransactionHolder holder) {
             event.setCancelled(true);
             if (event.getClickedInventory() == null || event.getClickedInventory() != top) {
                 return;
             }
             handleTransactionClick(player, holder, event.getRawSlot(), event.getCurrentItem());
+            return;
+        }
+
+        if (top.getHolder() instanceof ShopInventoryHolder holder) {
+            event.setCancelled(true);
+            if (event.getClickedInventory() == null || event.getClickedInventory() != top) {
+                return;
+            }
+            handleCatalogClick(player, holder, event.getRawSlot());
         }
     }
 
     @EventHandler
     public void onDrag(InventoryDragEvent event) {
         Inventory top = event.getView().getTopInventory();
-        if (top.getHolder() instanceof ShopInventoryHolder || top.getHolder() instanceof ShopTransactionHolder) {
+        if (top.getHolder() instanceof ShopInventoryHolder) {
             event.setCancelled(true);
         }
     }
