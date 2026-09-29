@@ -7,9 +7,11 @@ import id.cdr.vephilimeconomy.shop.Shop;
 import id.cdr.vephilimeconomy.shop.ShopListing;
 import id.cdr.vephilimeconomy.storage.StockRepository;
 import id.cdr.vephilimeconomy.transaction.TransactionType;
+import id.cdr.vephilimeconomy.util.InventoryUtil;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
@@ -23,20 +25,22 @@ import java.util.List;
 import java.util.Locale;
 
 public final class ShopGuiService {
+    private static final int[] BUY_AMOUNTS = {1, 16, 32, 64};
+
     private final StockRepository stocks;
     private final EconomyBridge economy;
     private final DynamicPricingService pricing;
     private final MiniMessage miniMessage = MiniMessage.miniMessage();
-    private final int bulkAmount;
+    private final int maxAmount;
     private final NamespacedKey buyQuoteKey;
     private final NamespacedKey sellQuoteKey;
 
     public ShopGuiService(JavaPlugin plugin, StockRepository stocks, EconomyBridge economy,
-                          DynamicPricingService pricing, int bulkAmount) {
+                          DynamicPricingService pricing, int maxAmount) {
         this.stocks = stocks;
         this.economy = economy;
         this.pricing = pricing;
-        this.bulkAmount = Math.max(1, bulkAmount);
+        this.maxAmount = Math.max(1, Math.min(2304, maxAmount));
         this.buyQuoteKey = new NamespacedKey(plugin, "buy_quote");
         this.sellQuoteKey = new NamespacedKey(plugin, "sell_quote");
     }
@@ -48,9 +52,85 @@ public final class ShopGuiService {
         holder.attach(inventory);
 
         for (ShopListing listing : shop.listings().values()) {
-            inventory.setItem(listing.slot(), render(player, shop, listing));
+            inventory.setItem(listing.slot(), renderListing(player, shop, listing));
         }
 
+        player.openInventory(inventory);
+    }
+
+    public void openTransactionMenu(Player player, Shop shop, ShopListing listing) {
+        ShopTransactionHolder holder = new ShopTransactionHolder(shop.id(), listing.id());
+        Inventory inventory = Bukkit.createInventory(holder, 27,
+                Component.text("Transaksi: " + prettyName(listing.material().name())));
+        holder.attach(inventory);
+
+        int stock = stock(shop, listing);
+        double buyPrice = quoteUnitPrice(player, shop, listing, TransactionType.BUY);
+        double sellPrice = quoteUnitPrice(player, shop, listing, TransactionType.SELL);
+
+        ItemStack preview = new ItemStack(listing.material());
+        ItemMeta previewMeta = preview.getItemMeta();
+        previewMeta.displayName(Component.text(prettyName(listing.material().name())));
+        List<Component> previewLore = new ArrayList<>();
+        previewLore.add(Component.text("Stok pedagang: " + stock + "/" + listing.maxStock()));
+        if (listing.mode().canBuy()) {
+            previewLore.add(Component.text("Harga beli / item: " + economy.format(buyPrice)));
+        }
+        if (listing.mode().canSell()) {
+            previewLore.add(Component.text("Harga jual / item: " + economy.format(sellPrice)));
+            previewLore.add(Component.text("Kamu punya: " + InventoryUtil.countPlain(player.getInventory(), listing.material())));
+        }
+        previewMeta.lore(previewLore);
+        preview.setItemMeta(previewMeta);
+        inventory.setItem(4, preview);
+
+        if (listing.mode().canBuy()) {
+            int[] slots = {10, 11, 12, 13};
+            for (int i = 0; i < BUY_AMOUNTS.length; i++) {
+                int amount = BUY_AMOUNTS[i];
+                if (amount > maxAmount) {
+                    continue;
+                }
+                inventory.setItem(slots[i], actionButton(
+                        Material.LIME_STAINED_GLASS_PANE,
+                        "Beli " + amount,
+                        TransactionType.BUY,
+                        buyPrice,
+                        "Total: " + economy.format(buyPrice * amount),
+                        "Klik untuk membeli " + amount
+                ));
+            }
+        }
+
+        if (listing.mode().canSell()) {
+            int held = sellableHeldAmount(player, listing);
+            int owned = InventoryUtil.countPlain(player.getInventory(), listing.material());
+            int capacity = Math.max(0, listing.maxStock() - stock);
+            int heldAccepted = Math.min(Math.min(held, capacity), maxAmount);
+            int allAccepted = Math.min(Math.min(owned, capacity), maxAmount);
+
+            inventory.setItem(19, actionButton(
+                    Material.CHEST,
+                    "Jual yang dipegang",
+                    TransactionType.SELL,
+                    sellPrice,
+                    "Di tangan: " + held,
+                    "Dapat dijual sekarang: " + heldAccepted,
+                    heldAccepted > 0 ? "Total: " + economy.format(sellPrice * heldAccepted) : "Tidak ada item valid di tangan"
+            ));
+            inventory.setItem(21, actionButton(
+                    Material.BARREL,
+                    "Jual semua",
+                    TransactionType.SELL,
+                    sellPrice,
+                    "Di inventory: " + owned,
+                    "Kapasitas NPC: " + capacity,
+                    "Dapat dijual sekarang: " + allAccepted,
+                    allAccepted > 0 ? "Total: " + economy.format(sellPrice * allAccepted) : "Tidak ada item yang dapat dijual"
+            ));
+        }
+
+        inventory.setItem(26, simpleButton(Material.ARROW, "Kembali", "Kembali ke daftar produk"));
         player.openInventory(inventory);
     }
 
@@ -63,6 +143,28 @@ public final class ShopGuiService {
         return value == null ? Double.NaN : value;
     }
 
+    public double quoteUnitPrice(Player player, Shop shop, ShopListing listing, TransactionType type) {
+        int stock = stock(shop, listing);
+        DynamicPricingService.PriceQuote quote = pricing == null ? null : pricing.quote(shop, listing, stock, type);
+        double base = type == TransactionType.BUY ? listing.buyPrice() : listing.sellPrice();
+        double market = quote == null ? base : quote.effectivePrice();
+        return type == TransactionType.BUY
+                ? PlayerDiscountService.applyCurrentBuyDiscount(player.getUniqueId(), shop.id(), market)
+                : market;
+    }
+
+    public int stock(Shop shop, ShopListing listing) {
+        return stocks.getStock(shop.id(), listing.id());
+    }
+
+    public int maxAmount() {
+        return maxAmount;
+    }
+
+    public String formatMoney(double amount) {
+        return economy.format(amount);
+    }
+
     public DynamicPricingService.ChurnDecision checkMarketChurn(Player player, Shop shop,
                                                                  ShopListing listing, TransactionType type) {
         if (pricing == null) {
@@ -72,19 +174,28 @@ public final class ShopGuiService {
     }
 
     public void recordSuccessfulMarketTransaction(Player player, Shop shop,
-                                                  ShopListing listing, TransactionType type) {
+                                                   ShopListing listing, TransactionType type) {
         if (pricing != null) {
             pricing.recordSuccessfulTransaction(player.getUniqueId(), shop, listing, type);
         }
     }
 
-    private ItemStack render(Player player, Shop shop, ShopListing listing) {
+    public static int sellableHeldAmount(Player player, ShopListing listing) {
+        ItemStack hand = player.getInventory().getItemInMainHand();
+        if (hand == null || hand.getType().isAir()) {
+            return 0;
+        }
+        ItemStack template = new ItemStack(listing.material());
+        return hand.isSimilar(template) ? hand.getAmount() : 0;
+    }
+
+    private ItemStack renderListing(Player player, Shop shop, ShopListing listing) {
         ItemStack stack = new ItemStack(listing.material());
         ItemMeta meta = stack.getItemMeta();
         meta.displayName(miniMessage.deserialize("<white><bold>" + escapeMini(prettyName(listing.material().name())) + "</bold></white>"));
 
         List<Component> lore = new ArrayList<>();
-        int stock = stocks.getStock(shop.id(), listing.id());
+        int stock = stock(shop, listing);
         DynamicPricingService.PriceQuote buyQuote = pricing == null
                 ? null
                 : pricing.quote(shop, listing, stock, TransactionType.BUY);
@@ -122,19 +233,13 @@ public final class ShopGuiService {
         lore.add(Component.empty());
 
         if (listing.mode().canBuy()) {
-            String label;
-            if (personalDiscount > 0.0D) {
-                label = "Harga beli kamu";
-            } else {
-                label = buyQuote != null && buyQuote.dynamic() ? "Harga beli dinamis" : "Harga beli";
-            }
+            String label = personalDiscount > 0.0D
+                    ? "Harga beli kamu"
+                    : buyQuote != null && buyQuote.dynamic() ? "Harga beli dinamis" : "Harga beli";
             lore.add(miniMessage.deserialize("<green>" + label + ": <gold>"
                     + escapeMini(economy.format(buyPrice)) + "</gold></green>"));
             if (stock <= 0) {
                 lore.add(miniMessage.deserialize("<red><bold>STOK HABIS</bold></red>"));
-            } else {
-                lore.add(miniMessage.deserialize("<dark_gray>Kiri: beli 1 • Shift+kiri: beli "
-                        + bulkAmount + "</dark_gray>"));
             }
         }
 
@@ -147,18 +252,40 @@ public final class ShopGuiService {
                     + escapeMini(economy.format(sellPrice)) + "</gold></aqua>"));
             if (stock >= listing.maxStock()) {
                 lore.add(miniMessage.deserialize("<yellow><bold>STOK PEDAGANG PENUH</bold></yellow>"));
-            } else {
-                lore.add(miniMessage.deserialize("<dark_gray>Kanan: jual 1 • Shift+kanan: jual "
-                        + bulkAmount + "</dark_gray>"));
             }
         }
 
+        lore.add(Component.empty());
+        lore.add(miniMessage.deserialize("<yellow>Klik / tap untuk membuka menu transaksi</yellow>"));
         meta.lore(lore);
         stack.setItemMeta(meta);
         return stack;
     }
 
-    private static String prettyName(String raw) {
+    private ItemStack actionButton(Material material, String name, TransactionType type,
+                                   double unitPrice, String... loreLines) {
+        ItemStack stack = simpleButton(material, name, loreLines);
+        ItemMeta meta = stack.getItemMeta();
+        NamespacedKey key = type == TransactionType.BUY ? buyQuoteKey : sellQuoteKey;
+        meta.getPersistentDataContainer().set(key, PersistentDataType.DOUBLE, unitPrice);
+        stack.setItemMeta(meta);
+        return stack;
+    }
+
+    private static ItemStack simpleButton(Material material, String name, String... loreLines) {
+        ItemStack stack = new ItemStack(material);
+        ItemMeta meta = stack.getItemMeta();
+        meta.displayName(Component.text(name));
+        List<Component> lore = new ArrayList<>();
+        for (String line : loreLines) {
+            lore.add(Component.text(line));
+        }
+        meta.lore(lore);
+        stack.setItemMeta(meta);
+        return stack;
+    }
+
+    public static String prettyName(String raw) {
         String[] words = raw.toLowerCase(Locale.ROOT).split("_");
         StringBuilder builder = new StringBuilder();
         for (String word : words) {
