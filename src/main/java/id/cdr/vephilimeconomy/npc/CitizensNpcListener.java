@@ -1,6 +1,5 @@
 package id.cdr.vephilimeconomy.npc;
 
-import id.cdr.vephilimeconomy.gui.BedrockShopFormService;
 import id.cdr.vephilimeconomy.gui.ShopGuiService;
 import id.cdr.vephilimeconomy.shop.Shop;
 import id.cdr.vephilimeconomy.shop.ShopRegistry;
@@ -15,17 +14,14 @@ public final class CitizensNpcListener implements Listener {
     private final JavaPlugin plugin;
     private final ShopRegistry registry;
     private final ShopGuiService gui;
-    private final BedrockShopFormService bedrockForms;
     private final RuntimeSafetyState safetyState;
     private final MiniMessage miniMessage = MiniMessage.miniMessage();
 
     public CitizensNpcListener(JavaPlugin plugin, ShopRegistry registry, ShopGuiService gui,
-                               BedrockShopFormService bedrockForms,
                                RuntimeSafetyState safetyState) {
         this.plugin = plugin;
         this.registry = registry;
         this.gui = gui;
-        this.bedrockForms = bedrockForms;
         this.safetyState = safetyState;
     }
 
@@ -44,9 +40,6 @@ public final class CitizensNpcListener implements Listener {
             return;
         }
 
-        if (bedrockForms != null && bedrockForms.openShopIfBedrock(event.getClicker(), shop)) {
-            return;
-        }
-        gui.open(event.getClicker(), shop);
+        gui.openCrossplay(event.getClicker(), shop);
     }
 }
