@@ -1,5 +1,6 @@
 package id.cdr.vephilimeconomy.gui;
 
+import id.cdr.vephilimeconomy.CdrVephilimEconomy;
 import id.cdr.vephilimeconomy.economy.EconomyBridge;
 import id.cdr.vephilimeconomy.pricing.DynamicPricingService;
 import id.cdr.vephilimeconomy.shop.Shop;
@@ -36,7 +37,7 @@ public final class ShopGuiListener implements Listener {
 
     public ShopGuiListener(JavaPlugin plugin, ShopRegistry registry, ShopGuiService gui,
                            TransactionService transactions, EconomyBridge economy,
-                           double maxNpcDistance) {
+                           int ignoredLegacyBulkAmount, double maxNpcDistance) {
         this.plugin = plugin;
         this.registry = registry;
         this.gui = gui;
@@ -44,6 +45,14 @@ public final class ShopGuiListener implements Listener {
         this.economy = economy;
         double normalizedDistance = Math.max(1.0D, Math.min(32.0D, maxNpcDistance));
         this.maxNpcDistanceSquared = normalizedDistance * normalizedDistance;
+
+        int maxAmount = Math.max(1, Math.min(2304,
+                plugin.getConfig().getInt("transaction.max-amount", 64)));
+        gui.configureMaxAmount(maxAmount);
+        if (plugin instanceof CdrVephilimEconomy cve) {
+            gui.installBedrockForms(new BedrockShopFormService(
+                    cve, gui, transactions, economy, maxNpcDistance));
+        }
     }
 
     @EventHandler
