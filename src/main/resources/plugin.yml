@@ -1,5 +1,5 @@
 name: CdrVephilimEconomy
-version: '1.0.0-RC5'
+version: '1.0.0-RC6'
 main: id.cdr.vephilimeconomy.CdrVephilimEconomy
 api-version: '1.21.11'
 authors: [MenkiPlugcore]
