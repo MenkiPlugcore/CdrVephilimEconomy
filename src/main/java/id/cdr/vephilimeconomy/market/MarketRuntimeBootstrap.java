@@ -17,8 +17,8 @@ import java.util.WeakHashMap;
  *
  * <p>Dynamic pricing and transaction listeners are rebuilt by /cve reload, but
  * the license monitor, supply command interceptor, personal-discount commands,
- * in-game shop editor, and natural-expiry lifecycle driver must only be registered
- * once for the lifetime of the plugin instance.</p>
+ * in-game shop editor, natural-expiry lifecycle driver, and automatic restock
+ * scheduler must only be registered once for the lifetime of the plugin instance.</p>
  */
 public final class MarketRuntimeBootstrap {
     private static final Set<CdrVephilimEconomy> STARTED =
@@ -49,6 +49,7 @@ public final class MarketRuntimeBootstrap {
         MarketSupplyCommandListener supplyListener = null;
         PlayerDiscountCommandListener discountListener = null;
         AdminShopGuiEditor shopEditor = null;
+        AutoRestockService autoRestock = null;
         try {
             supplyListener = new MarketSupplyCommandListener(plugin, audit);
             plugin.getServer().getPluginManager().registerEvents(supplyListener, plugin);
@@ -63,7 +64,10 @@ public final class MarketRuntimeBootstrap {
             MarketEventLifecycleService lifecycle = new MarketEventLifecycleService(plugin, audit);
             lifecycle.start();
 
-            plugin.getLogger().info("Production runtime bootstrap active: licenseGuard=1, supplyListener=1, discountListener=1, shopEditor=1, expiryLifecycle=1.");
+            autoRestock = new AutoRestockService(plugin, audit);
+            autoRestock.start();
+
+            plugin.getLogger().info("Production runtime bootstrap active: licenseGuard=1, supplyListener=1, discountListener=1, shopEditor=1, expiryLifecycle=1, autoRestock=1.");
             return true;
         } catch (RuntimeException exception) {
             if (supplyListener != null) {
@@ -74,6 +78,9 @@ public final class MarketRuntimeBootstrap {
             }
             if (shopEditor != null) {
                 HandlerList.unregisterAll(shopEditor);
+            }
+            if (autoRestock != null) {
+                autoRestock.stop();
             }
             licenseGuard.stopMonitoring();
             STARTED.remove(plugin);
