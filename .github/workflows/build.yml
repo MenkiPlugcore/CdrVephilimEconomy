@@ -24,9 +24,21 @@ jobs:
       - name: Build
         run: mvn --batch-mode --no-transfer-progress clean package
 
+      - name: Validate wanted pricing integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          JAR="target/CdrVephilimEconomy-1.0.0-RC7.jar"
+          test -f "$JAR"
+          jar tf "$JAR" > jar-contents.txt
+          grep -q 'id/cdr/vephilimeconomy/integration/WantedPriceBridge.class' jar-contents.txt
+          unzip -p "$JAR" plugin.yml > packaged-plugin.yml
+          grep -q "^version: '1.0.0-RC7'$" packaged-plugin.yml
+          grep -q '^softdepend: \[floodgate, CdrBounty\]' packaged-plugin.yml
+
       - name: Upload plugin jar
         uses: actions/upload-artifact@v4
         with:
-          name: CdrVephilimEconomy-1.0.0-RC6
-          path: target/CdrVephilimEconomy-*.jar
+          name: CdrVephilimEconomy-1.0.0-RC7
+          path: target/CdrVephilimEconomy-1.0.0-RC7.jar
           if-no-files-found: error
