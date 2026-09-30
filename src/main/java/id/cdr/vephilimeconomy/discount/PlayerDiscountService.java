@@ -2,6 +2,7 @@ package id.cdr.vephilimeconomy.discount;
 
 import id.cdr.vephilimeconomy.CdrVephilimEconomy;
 import id.cdr.vephilimeconomy.admin.AdminAuditService;
+import id.cdr.vephilimeconomy.integration.WantedPriceBridge;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -26,9 +27,9 @@ import java.util.regex.Pattern;
 /**
  * Persistent BUY-only personal discounts configured by an administrator.
  *
- * <p>The market/dynamic/event price is calculated first. The personal discount
- * is then applied as the final BUY-price layer. SELL prices are intentionally
- * unaffected.</p>
+ * <p>The market/dynamic/event price is calculated first, then the personal
+ * discount, then the optional CdrBounty wanted surcharge. SELL prices are
+ * intentionally unaffected.</p>
  */
 public final class PlayerDiscountService {
     public static final double MAX_DISCOUNT_PERCENT = 90.0D;
@@ -84,10 +85,8 @@ public final class PlayerDiscountService {
 
     public static double applyCurrentBuyDiscount(UUID playerId, String shopId, double marketPrice) {
         PlayerDiscountService service = INSTANCE;
-        if (service == null) {
-            return marketPrice;
-        }
-        return service.applyBuyDiscount(playerId, shopId, marketPrice);
+        double discounted = service == null ? marketPrice : service.applyBuyDiscount(playerId, shopId, marketPrice);
+        return WantedPriceBridge.applyBuySurcharge(playerId, discounted);
     }
 
     public synchronized Result load() {
