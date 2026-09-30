@@ -10,6 +10,41 @@ transaction:
   # Safety clamp internal: 1-2304.
   max-amount: 64
 
+# RC6 automatic BUY-side restock.
+# Hanya listing yang mode-nya dapat BUY yang akan direstock otomatis.
+# SELL-only shop seperti farmer/fisherman/ore tetap bergantung pada supply player.
+restock:
+  enabled: true
+
+  # Default: setiap 6 jam, +128 item sampai max-stock.
+  interval-minutes: 360
+  amount: 128
+
+  # Override opsional per shop / per listing.
+  # Shop BUY baru otomatis ikut default di atas kecuali dimatikan di sini.
+  shops:
+    food:
+      enabled: true
+      interval-minutes: 360
+      amount: 128
+
+    block:
+      enabled: true
+      interval-minutes: 360
+      amount: 128
+
+    # Contoh override satu produk:
+    # blacksmith:
+    #   enabled: true
+    #   interval-minutes: 720
+    #   amount: 64
+    #   listings:
+    #     diamond:
+    #       enabled: false
+    #     iron_ingot:
+    #       interval-minutes: 180
+    #       amount: 96
+
 npc:
   # Player wajib tetap berada dekat NPC saat melakukan transaksi.
   # Ini mencegah GUI shop dipakai dari jarak jauh setelah player berjalan/teleport.
