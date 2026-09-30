@@ -1,12 +1,12 @@
 name: CdrVephilimEconomy
-version: '1.0.0-RC6'
+version: '1.0.0-RC7'
 main: id.cdr.vephilimeconomy.CdrVephilimEconomy
 api-version: '1.21.11'
 authors: [MenkiPlugcore]
-description: Crossplay NPC-first economy for Vephilim Roleplay.
+description: Crossplay NPC-first economy for Vephilim Roleplay with optional CdrBounty wanted pricing.
 website: https://github.com/MenkiPlugcore/CdrVephilimEconomy
 depend: [Citizens, Vault]
-softdepend: [floodgate]
+softdepend: [floodgate, CdrBounty]
 
 commands:
   cve:
@@ -69,14 +69,12 @@ permissions:
   cdrvephilimeconomy.shop.manager:
     description: Set shop responsibility metadata.
     default: false
-
   cdrvephilimeconomy.discount.view:
     description: View per-player BUY discount status and assignments.
     default: false
   cdrvephilimeconomy.discount.manage:
     description: Set, remove, clear, and reload per-player BUY discounts.
     default: op
-
   cdrvephilimeconomy.governance.view:
     description: View economy governance assignments and approval evidence.
     default: false
@@ -86,14 +84,12 @@ permissions:
   cdrvephilimeconomy.governance.admin:
     description: Grant, revoke, reload, and recover economy governance state.
     default: op
-
   cdrvephilimeconomy.pricing.view:
     description: View dynamic pricing status, policies, and market statistics globally.
     default: false
   cdrvephilimeconomy.pricing.manage:
     description: Manage dynamic pricing policy without role guardrails.
     default: false
-
   cdrvephilimeconomy.market.view:
     description: View RP market events and supply-event evidence globally regardless of governance shop scope.
     default: false
